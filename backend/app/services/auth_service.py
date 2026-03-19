@@ -68,12 +68,13 @@ async def get_current_worker(
     try:
         payload = jwt.decode(credentials.credentials, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         worker_id: str = payload.get("sub")
-        if worker_id is None:
+        token_type: str = payload.get("type")
+        if worker_id is None or token_type != "access":
             raise credentials_exception
     except JWTError:
         raise credentials_exception
 
-    result = await db.execute(select(Worker).where(Worker.id == worker_id))
+    result = await db.execute(select(Worker).where(Worker.id == str(worker_id)))
     worker = result.scalar_one_or_none()
     if worker is None:
         raise credentials_exception
