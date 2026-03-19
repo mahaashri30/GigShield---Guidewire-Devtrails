@@ -1,0 +1,173 @@
+from sqlalchemy import Column, String, Float, Integer, Boolean, DateTime, Enum, ForeignKey, Text
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+from app.database import Base
+import enum
+import uuid
+
+
+def gen_uuid():
+    return str(uuid.uuid4())
+
+
+class Platform(str, enum.Enum):
+    ZOMATO = "zomato"
+    SWIGGY = "swiggy"
+    DUNZO = "dunzo"
+    BLINKIT = "blinkit"
+    ZEPTO = "zepto"
+    AMAZON = "amazon"
+
+
+class PolicyTier(str, enum.Enum):
+    BASIC = "basic"
+    SMART = "smart"
+    PRO = "pro"
+
+
+class PolicyStatus(str, enum.Enum):
+    ACTIVE = "active"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+    PENDING = "pending"
+
+
+class ClaimStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    PAID = "paid"
+
+
+class DisruptionType(str, enum.Enum):
+    HEAVY_RAIN = "heavy_rain"
+    EXTREME_HEAT = "extreme_heat"
+    AQI_SPIKE = "aqi_spike"
+    TRAFFIC_DISRUPTION = "traffic_disruption"
+    CIVIC_EMERGENCY = "civic_emergency"
+
+
+class DisruptionSeverity(str, enum.Enum):
+    MODERATE = "moderate"
+    SEVERE = "severe"
+    EXTREME = "extreme"
+
+
+class PayoutStatus(str, enum.Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class Worker(Base):
+    __tablename__ = "workers"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    phone = Column(String(15), unique=True, nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    email = Column(String(200), nullable=True)
+    platform = Column(Enum(Platform), nullable=False)
+    platform_worker_id = Column(String(100), nullable=True)
+    city = Column(String(100), nullable=False)
+    pincode = Column(String(10), nullable=False)
+    upi_id = Column(String(100), nullable=True)
+    bank_account = Column(String(20), nullable=True)
+    bank_ifsc = Column(String(15), nullable=True)
+    aadhaar_last4 = Column(String(4), nullable=True)
+    is_verified = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+    avg_daily_earnings = Column(Float, default=600.0)
+    risk_score = Column(Float, default=0.5)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    policies = relationship("Policy", back_populates="worker")
+    claims = relationship("Claim", back_populates="worker")
+
+
+class Policy(Base):
+    __tablename__ = "policies"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    worker_id = Column(String, ForeignKey("workers.id"), nullable=False)
+    tier = Column(Enum(PolicyTier), nullable=False, default=PolicyTier.SMART)
+    status = Column(Enum(PolicyStatus), nullable=False, default=PolicyStatus.ACTIVE)
+    weekly_premium = Column(Float, nullable=False)
+    base_premium = Column(Float, nullable=False)
+    max_daily_payout = Column(Float, nullable=False)
+    max_weekly_payout = Column(Float, nullable=False)
+    pincode = Column(String(10), nullable=False)
+    city = Column(String(100), nullable=False)
+    start_date = Column(DateTime(timezone=True), nullable=False)
+    end_date = Column(DateTime(timezone=True), nullable=False)
+    total_claimed = Column(Float, default=0.0)
+    claims_count = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    worker = relationship("Worker", back_populates="policies")
+    claims = relationship("Claim", back_populates="policy")
+
+
+class DisruptionEvent(Base):
+    __tablename__ = "disruption_events"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    disruption_type = Column(Enum(DisruptionType), nullable=False)
+    severity = Column(Enum(DisruptionSeverity), nullable=False)
+    city = Column(String(100), nullable=False)
+    pincode = Column(String(10), nullable=True)
+    dss_multiplier = Column(Float, nullable=False)
+    raw_value = Column(Float, nullable=True)  # mm/hr, °C, AQI value
+    description = Column(Text, nullable=True)
+    source = Column(String(100), nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    ended_at = Column(DateTime(timezone=True), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    claims = relationship("Claim", back_populates="disruption_event")
+
+
+class Claim(Base):
+    __tablename__ = "claims"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    worker_id = Column(String, ForeignKey("workers.id"), nullable=False)
+    policy_id = Column(String, ForeignKey("policies.id"), nullable=False)
+    disruption_event_id = Column(String, ForeignKey("disruption_events.id"), nullable=False)
+    status = Column(Enum(ClaimStatus), nullable=False, default=ClaimStatus.PENDING)
+    claimed_amount = Column(Float, nullable=False)
+    approved_amount = Column(Float, nullable=True)
+    worker_daily_avg = Column(Float, nullable=False)
+    dss_multiplier = Column(Float, nullable=False)
+    active_hours_ratio = Column(Float, nullable=False, default=1.0)
+    fraud_score = Column(Float, default=0.0)
+    fraud_flags = Column(Text, nullable=True)  # JSON string
+    auto_approved = Column(Boolean, default=False)
+    rejection_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+
+    worker = relationship("Worker", back_populates="claims")
+    policy = relationship("Policy", back_populates="claims")
+    disruption_event = relationship("DisruptionEvent", back_populates="claims")
+    payout = relationship("Payout", back_populates="claim", uselist=False)
+
+
+class Payout(Base):
+    __tablename__ = "payouts"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    claim_id = Column(String, ForeignKey("claims.id"), nullable=False, unique=True)
+    worker_id = Column(String, ForeignKey("workers.id"), nullable=False)
+    amount = Column(Float, nullable=False)
+    status = Column(Enum(PayoutStatus), nullable=False, default=PayoutStatus.PENDING)
+    upi_id = Column(String(100), nullable=True)
+    razorpay_payout_id = Column(String(100), nullable=True)
+    transaction_ref = Column(String(100), nullable=True)
+    initiated_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    failure_reason = Column(Text, nullable=True)
+
+    claim = relationship("Claim", back_populates="payout")

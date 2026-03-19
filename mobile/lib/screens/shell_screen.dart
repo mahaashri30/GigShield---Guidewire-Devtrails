@@ -1,0 +1,83 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:gigshield/theme/app_theme.dart';
+
+class ShellScreen extends StatelessWidget {
+  final Widget child;
+  const ShellScreen({super.key, required this.child});
+
+  int _locationIndex(BuildContext context) {
+    final loc = GoRouterState.of(context).matchedLocation;
+    if (loc.startsWith('/policy')) return 1;
+    if (loc.startsWith('/claims')) return 2;
+    if (loc.startsWith('/profile')) return 3;
+    return 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final idx = _locationIndex(context);
+    return Scaffold(
+      body: child,
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: AppTheme.divider, width: 0.5)),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _NavItem(icon: Icons.home_rounded, label: 'Home', active: idx == 0, onTap: () => context.go('/home')),
+                _NavItem(icon: Icons.shield_rounded, label: 'Policy', active: idx == 1, onTap: () => context.go('/policy')),
+                _NavItem(icon: Icons.receipt_long_rounded, label: 'Claims', active: idx == 2, onTap: () => context.go('/claims')),
+                _NavItem(icon: Icons.person_rounded, label: 'Profile', active: idx == 3, onTap: () => context.go('/profile')),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  const _NavItem({required this.icon, required this.label, required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? AppTheme.primaryLight : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: active ? AppTheme.primary : AppTheme.textHint, size: 24),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                color: active ? AppTheme.primary : AppTheme.textHint,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
