@@ -9,18 +9,21 @@ final apiServiceProvider = Provider<ApiService>((ref) => ApiService());
 
 class AuthState {
   final bool isLoggedIn;
+  final bool isNewUser;
   final String? workerId;
   final bool isLoading;
   final String? error;
   const AuthState({
     this.isLoggedIn = false,
+    this.isNewUser = false,
     this.workerId,
     this.isLoading = false,
     this.error,
   });
-  AuthState copyWith({bool? isLoggedIn, String? workerId, bool? isLoading, String? error}) =>
+  AuthState copyWith({bool? isLoggedIn, bool? isNewUser, String? workerId, bool? isLoading, String? error}) =>
       AuthState(
         isLoggedIn: isLoggedIn ?? this.isLoggedIn,
+        isNewUser: isNewUser ?? this.isNewUser,
         workerId: workerId ?? this.workerId,
         isLoading: isLoading ?? this.isLoading,
         error: error,
@@ -59,17 +62,28 @@ class AuthNotifier extends StateNotifier<AuthState> {
         res['refresh_token'],
         res['worker_id'],
       );
-      state = state.copyWith(isLoggedIn: true, workerId: res['worker_id'], isLoading: false);
-      return res['is_new_user'] ?? false;
+      final isNew = res['is_new_user'] ?? false;
+      // For new users, don't set isLoggedIn yet — wait until registration completes
+      state = state.copyWith(
+        isLoggedIn: !isNew,
+        isNewUser: isNew,
+        workerId: res['worker_id'],
+        isLoading: false,
+      );
+      return isNew;
     } catch (e) {
       state = state.copyWith(isLoading: false, error: 'Invalid OTP. Try again.');
       return false;
     }
   }
 
+  Future<void> completeRegistration() async {
+    state = state.copyWith(isLoggedIn: true, isNewUser: false);
+  }
+
   Future<void> logout() async {
     await _api.logout();
-    state = const AuthState();
+    state = const AuthState(isNewUser: false);
   }
 }
 

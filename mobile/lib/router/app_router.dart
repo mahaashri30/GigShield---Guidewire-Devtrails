@@ -20,6 +20,7 @@ class _AuthListenable extends ChangeNotifier {
   }
   final Ref _ref;
   bool get isLoggedIn => _ref.read(authProvider).isLoggedIn;
+  bool get isNewUser => _ref.read(authProvider).isNewUser;
 }
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -30,14 +31,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     refreshListenable: listenable,
     redirect: (context, state) {
       final isLoggedIn = listenable.isLoggedIn;
-      final onAuth = state.matchedLocation.startsWith('/auth');
+      final isNewUser = listenable.isNewUser;
       final onSplash = state.matchedLocation == '/splash';
       final onRegister = state.matchedLocation == '/auth/register';
+      final onAuth = state.matchedLocation.startsWith('/auth');
 
       if (onSplash) return null;
-      if (onRegister) return null;
-      if (!isLoggedIn && !onAuth) return '/auth/phone';
-      if (isLoggedIn && onAuth) return '/home';
+      if (isLoggedIn) return onAuth ? '/home' : null;
+      if (isNewUser) return onRegister ? null : '/auth/register';
+      if (!onAuth) return '/auth/phone';
       return null;
     },
     routes: [

@@ -52,6 +52,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         'pincode': _pincode,
         'upi_id': _upiCtrl.text.trim().isEmpty ? null : _upiCtrl.text.trim(),
       });
+      await ref.read(authProvider.notifier).completeRegistration();
       if (mounted) context.go('/home');
     } catch (e) {
       if (mounted) {
@@ -60,7 +61,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         );
       }
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
