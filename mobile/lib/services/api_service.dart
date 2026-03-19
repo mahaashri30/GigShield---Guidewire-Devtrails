@@ -22,10 +22,44 @@ class ApiService {
         }
         return handler.next(options);
       },
-      onError: (DioException e, handler) {
+      onError: (DioException e, handler) async {
+        if (e.response?.statusCode == 401) {
+          // Attempt silent token refresh before giving up
+          final refreshed = await _tryRefresh();
+          if (refreshed) {
+            // Retry the original request with the new token
+            final token = await _storage.read(key: AppConstants.accessTokenKey);
+            final opts = e.requestOptions;
+            opts.headers['Authorization'] = 'Bearer $token';
+            try {
+              final response = await _dio.fetch(opts);
+              return handler.resolve(response);
+            } catch (_) {}
+          }
+          // Refresh failed — clear storage so app redirects to login
+          await _storage.deleteAll();
+        }
         return handler.next(e);
       },
     ));
+  }
+
+  Future<bool> _tryRefresh() async {
+    final refreshToken = await _storage.read(key: AppConstants.refreshTokenKey);
+    if (refreshToken == null) return false;
+    try {
+      // Use a plain Dio instance (no interceptors) to avoid infinite loop
+      final res = await Dio(BaseOptions(baseUrl: AppConstants.baseUrl)).post(
+        '/auth/refresh',
+        data: {'refresh_token': refreshToken},
+      );
+      final newAccess = res.data['access_token'] as String?;
+      if (newAccess == null) return false;
+      await _storage.write(key: AppConstants.accessTokenKey, value: newAccess);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
