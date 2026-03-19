@@ -62,16 +62,30 @@ When external disruptions hit — heavy rain, flooding, extreme heat, AQI spikes
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Name     : Arun Kumar                                  │
-│  Age      : 24                                          │
-│  Location : Chennai, Tamil Nadu                         │
-│  Role     : Quick-Commerce Grocery Delivery Partner     │
-│  Platform : Blinkit / Zepto / Swiggy Instamart          │
-│  Earnings : ₹800 – ₹1,200 per day (₹5,600–₹8,400/week) │
-│  Payment  : Weekly settlement from platform             │
-│  Zone     : Operates within 2–3 km of a dark store      │
+│  Name        : Arun Kumar                               │
+│  Age         : 24                                       │
+│  Location    : Chennai, Tamil Nadu (Pincode: 600001)    │
+│  Role        : Quick-Commerce Grocery Delivery Partner  │
+│  Platform    : Blinkit / Zepto / Swiggy Instamart       │
+│  Earnings    : ₹800–₹1,200/day  |  ₹5,600–₹8,400/week  │
+│  Payment     : Weekly settlement from platform          │
+│  Zone        : 2–3 km radius from dark store            │
+│  Dependents  : Wife + 1 child. Monthly rent: ₹6,500     │
+│  Savings     : Less than ₹2,000 at any given time       │
+│  Insurance   : None. Never had any.                     │
 └─────────────────────────────────────────────────────────┘
 ```
+
+### Why Arun Has No Insurance Today
+
+Arun is not unaware of risk — he rides through flooded streets every monsoon. He has no insurance because:
+
+- **No product exists** for income loss. Health and vehicle insurance don't pay him when he can't ride.
+- **Premiums are annual** — he cannot afford ₹3,000–₹5,000 upfront. He lives week to week.
+- **Claims require paperwork** — he has no time, no documents, no agent.
+- **He doesn't trust the system** — he has seen colleagues file claims that were rejected months later.
+
+GigShield is designed around every one of these barriers.
 
 ### Arun's Day Without GigShield
 
@@ -83,17 +97,18 @@ It's a Tuesday in October. Northeast monsoon hits Chennai. Rainfall crosses 90mm
 - End of day — Arun earns ₹180 instead of ₹950.
 - **Weekly shortfall: ₹3,800. Rent is due in 4 days.**
 
-No claim to file. No insurance to call. No safety net.
+No claim to file. No insurance to call. No safety net. He borrows from a colleague.
 
 ### Arun's Day With GigShield
 
-- Arun pays ₹49/week for Smart Shield.
-- At 8:00 AM, GigShield's system detects rainfall > 64mm/hr in Chennai.
-- A disruption event is automatically created.
-- Arun's claim is triggered without him doing anything.
-- Fraud engine validates: city match `[PASS]`, active policy `[PASS]`, no duplicate `[PASS]`.
-- **₹570 is credited to his UPI ID by 9:00 AM.**
-- He can cover his daily expenses even without riding.
+- Arun pays ₹49/week for Smart Shield — deducted from his weekly platform settlement.
+- At 8:00 AM, GigShield detects rainfall > 64mm/hr in Chennai (pincode 600001).
+- A `HEAVY_RAIN / SEVERE` disruption event is created automatically.
+- Arun's claim is triggered — he does nothing.
+- Fraud engine runs in milliseconds: city match `[PASS]`, active policy `[PASS]`, no duplicate `[PASS]`, fraud score `12/100`.
+- Payout = ₹950 × 0.60 × 1.0 = ₹570 → capped at ₹550 (Smart Shield daily cap).
+- **₹550 is credited to his UPI ID by 9:00 AM.**
+- He stays home. His family eats. Rent is safe.
 
 ---
 
@@ -193,25 +208,40 @@ Where:
 
 Parametric insurance pays out when a **pre-defined, objectively measurable condition** is met — no claim filing, no assessment, no delay.
 
-### Trigger Definitions
+Triggers are grouped into two categories based on the nature of the disruption:
 
-| Trigger | Threshold | Severity Levels |
-|---|---|---|
-| Heavy Rainfall | > 35 mm/hr (Moderate), > 64.5 mm/hr (Severe), > 115 mm/day equivalent (Extreme) | 3 |
-| Extreme Heat | > 42°C (Moderate), > 44°C (Severe), > 46°C (Extreme) | 3 |
-| AQI Spike | > 200 (Moderate), > 300 (Severe), > 400 (Extreme) | 3 |
-| Traffic Disruption | Congestion index threshold breach | 3 |
-| Civic Emergency | Government-declared curfew / road blockage | 3 |
+### Category A — Environmental Disruptions
+
+These are weather and air quality events that physically prevent outdoor delivery work.
+
+| Trigger | Why It Stops Deliveries | Threshold | Severity Levels |
+|---|---|---|---|
+| Heavy Rainfall / Floods | Roads waterlogged, bikes stall, orders drop 60–80%, platforms reduce active zones | > 35 mm/hr (Moderate), > 64.5 mm/hr (Severe), > 115 mm/day (Extreme) | 3 |
+| Extreme Heat | Outdoor riding becomes medically dangerous above 42°C, platforms issue heat advisories, order volumes drop | > 42°C (Moderate), > 44°C (Severe), > 46°C (Extreme) | 3 |
+| Severe Pollution / AQI Spike | AQI > 300 triggers government outdoor activity bans, platforms reduce delivery radius, workers cannot breathe while riding — directly causes income loss | > 200 AQI (Moderate), > 300 AQI (Severe), > 400 AQI (Extreme) | 3 |
+
+> **On AQI as a trigger:** This is not a secondary concern. Delhi's AQI regularly crosses 400 in November–January. When this happens, the NCR government issues GRAP Stage 3/4 restrictions, platforms like Zomato and Swiggy reduce active delivery zones, and workers who do ride face respiratory distress. The income loss is real, measurable, and directly tied to an objective index — making it a textbook parametric trigger.
+
+### Category B — Social / Civic Disruptions
+
+These are human-caused events that block access to pickup or drop locations.
+
+| Trigger | Why It Stops Deliveries | Threshold | Severity Levels |
+|---|---|---|---|
+| Traffic Disruption | Protests, accidents, or VIP movement cause road blockages — workers cannot reach dark stores or customer locations | Congestion index > threshold for > 2 hours | 3 |
+| Civic Emergency | Government-declared curfew, unplanned local strikes, sudden market/zone closures — pickup and drop locations become inaccessible | Official declaration or verified zone closure | 3 |
 
 ### DSS (Disruption Severity Score) Multiplier Table
 
-| Trigger | Moderate | Severe | Extreme |
-|---|---|---|---|
-| Heavy Rain | 0.30 | 0.60 | 1.00 |
-| Extreme Heat | 0.30 | 0.60 | 1.00 |
-| AQI Spike | 0.20 | 0.50 | 1.00 |
-| Traffic Disruption | 0.30 | 0.50 | 0.80 |
-| Civic Emergency | 0.50 | 0.80 | 1.00 |
+The DSS multiplier is the core of the payout formula. A higher severity = higher income loss = higher payout.
+
+| Trigger | Moderate | Severe | Extreme | Real-World Example |
+|---|---|---|---|---|
+| Heavy Rain | 0.30 | 0.60 | 1.00 | Mumbai July flooding — roads impassable |
+| Extreme Heat | 0.30 | 0.60 | 1.00 | Delhi May heatwave — 46°C, advisories issued |
+| AQI Spike | 0.20 | 0.50 | 1.00 | Delhi Nov AQI 450 — GRAP Stage 4 restrictions |
+| Traffic Disruption | 0.30 | 0.50 | 0.80 | Bandh / VIP convoy blocking arterial roads |
+| Civic Emergency | 0.50 | 0.80 | 1.00 | Curfew declared — zero deliveries possible |
 
 The DSS multiplier directly drives the payout amount — a more severe disruption results in a proportionally higher payout.
 
@@ -255,135 +285,178 @@ Weekly cap prevents over-claiming across multiple disruption events in the same 
 
 ## 8. AI / ML Integration
 
+GigShield's AI is not decorative. Every rupee paid out and every premium charged is computed by a model. Here is exactly how each model works, what data it uses, and how it gets built.
+
 ### 8.1 Dynamic Premium Engine
 
-**Phase 1 (Live):** Rule-based formula using zone risk, season factors, and worker history. Implemented in `backend/app/services/premium_service.py`.
+**Phase 1 — Rule-Based Formula (Live)**
 
-**Phase 2 (Planned):** XGBoost regression model trained on:
-- Historical disruption frequency by pincode
-- Seasonal weather patterns
-- Worker claim history
-- Platform activity scores
+The live premium engine in `backend/app/services/premium_service.py` computes:
 
-Training script: `backend/ml/premium_engine/train.py`
+```
+Premium = Base × Zone Risk × Season Factor × Worker History Factor
+```
+
+Each factor is grounded in real actuarial logic:
+- **Zone Risk** is derived from historical flood/heat/AQI incident frequency per pincode prefix. Mumbai (400xxx) carries 1.35× because it floods every monsoon. Hyderabad (500xxx) carries 1.05× because it rarely does.
+- **Season Factor** peaks at 1.35 in July (peak monsoon) and drops to 1.0 in January. This mirrors IMD historical rainfall distribution.
+- **Worker History Factor** rewards long-tenure workers with clean claim records (0.95×) — the same logic as no-claims bonus in motor insurance.
+
+**Phase 2 — XGBoost Regression Model**
+
+The training script at `backend/ml/premium_engine/train.py` generates 5,000 synthetic training samples with features:
+
+| Feature | Why it matters |
+|---|---|
+| `pincode_prefix` | Encodes zone-level flood/heat risk |
+| `month` | Captures seasonal disruption probability |
+| `tier` | Base price anchor |
+| `tenure_weeks` | Proxy for worker reliability |
+| `activity_score` | Platform engagement — active workers are lower risk |
+| `zone_risk` | Pre-computed multiplier |
+| `season_factor` | Pre-computed multiplier |
+
+The XGBoost model learns non-linear interactions between these features — for example, a Mumbai worker in July with low activity is disproportionately high risk compared to the sum of individual factors. The rule-based formula cannot capture this. The model can.
+
+In Phase 2, the model is retrained weekly on real claims data, replacing synthetic samples with ground truth.
 
 ### 8.2 Fraud Detection Engine
 
-**Phase 1 (Live):** Rule-based scoring system. Each claim is scored 0–100 across 5 rules:
+**Phase 1 — Rule-Based Scoring (Live)**
 
-| Rule | Score Impact | Description |
+Every claim that enters the system is scored 0–100 in `backend/app/services/fraud_service.py` before a single rupee moves:
+
+| Rule | Score | Rationale |
 |---|---|---|
-| City Mismatch | +40 | Worker's registered city ≠ disruption event city |
-| Platform Inactive | +25 | Worker not logged into platform during event window |
-| High Claim Frequency | +10 to +20 | ≥ 3 claims in 7 days |
-| Duplicate Claim | +50 | Same worker, same disruption event |
-| Suspicious Speed | +15 | Claim filed < 30 seconds after event start |
+| City Mismatch | +40 | Worker registered in Delhi cannot claim a Chennai flood |
+| Platform Inactive | +25 | If the platform shows the worker offline, they weren’t affected |
+| High Claim Frequency | +10 to +20 | ≥ 3 claims in 7 days is statistically anomalous |
+| Duplicate Claim | +50 | Hard signal — same event cannot be claimed twice |
+| Suspicious Speed | +15 | Filing < 30 seconds after event creation suggests automation |
 
 **Verdict:**
 - Score `< 30` → ![Auto Approved](https://img.shields.io/badge/AUTO-APPROVED-10B981?style=flat-square&logoColor=white)
 - Score `30–70` → ![Manual Review](https://img.shields.io/badge/MANUAL-REVIEW-F59E0B?style=flat-square&logoColor=white)
 - Score `≥ 70` → ![Auto Rejected](https://img.shields.io/badge/AUTO-REJECTED-EF4444?style=flat-square&logoColor=white)
 
-**Phase 2 (Planned):** Isolation Forest unsupervised anomaly detection model trained on synthetic + real claim data. Training script: `backend/ml/fraud_detection/train.py`
+**Phase 2 — Isolation Forest Anomaly Detection**
+
+The training script at `backend/ml/fraud_detection/train.py` trains an unsupervised Isolation Forest on 5,000 synthetic claims (4,500 clean + 500 fraudulent). The model learns what a normal claim looks like across 6 dimensions:
+
+| Feature | Normal Range | Fraud Pattern |
+|---|---|---|
+| `city_match` | 1.0 (always matches) | 0.0–0.2 (GPS spoofed) |
+| `platform_active` | 0.95 (almost always online) | 0.3 (mostly offline) |
+| `claims_this_week` | 1–2 | 5–15 (coordinated ring) |
+| `time_delta_seconds` | 300–3600s | 0–10s (bot-filed) |
+| `active_hours_ratio` | 0.5–1.0 | 0.0–0.3 |
+| `claim_amount_ratio` | 0.3–1.0 | Always 1.0 (max claim) |
+
+Isolation Forest assigns an anomaly score to each claim. Claims below the threshold are flagged for review regardless of rule-based score — this catches novel fraud patterns the rules haven’t seen before.
 
 ### 8.3 Risk Prediction (Phase 2)
 
-Predict disruption probability 24–48 hours ahead using:
-- Historical weather data by city/pincode
-- Flood zone mapping
-- Seasonal patterns
-- IMD (India Meteorological Department) data feeds
+A third model predicts disruption probability 24–48 hours ahead per city/pincode using:
+- IMD historical rainfall data by district
+- Flood zone shapefiles (NDMA open data)
+- Seasonal decomposition of AQI time series
+- Traffic incident frequency by day-of-week and hour
+
+This enables **proactive premium adjustment** before a disruption hits and **worker alerts** the night before a high-risk day.
 
 ---
 
 ## 9. Adversarial Defense & Anti-Spoofing Strategy
 
-> *Response to the Phase 1 "Market Crash" challenge — 500 delivery partners, fake GPS, coordinated fraud ring.*
+> *Direct response to the Phase 1 "Market Crash" challenge — 500 delivery partners, fake GPS, coordinated fraud ring draining the liquidity pool.*
 
-### The Attack Vector
+### Understanding the Attack
 
-A coordinated fraud ring operates as follows:
-1. Multiple fake/mule accounts are registered with real phone numbers
-2. GPS is spoofed to place workers in a disruption-affected city
-3. Claims are filed simultaneously across all accounts for the same event
-4. Payouts drain the liquidity pool before detection
+This is not a single bad actor. It is an **organised fraud ring** operating with a playbook:
 
-### Our Defense Architecture
+1. Register 500 accounts using real SIM cards bought in bulk
+2. All accounts claim the same disruption event within minutes of each other
+3. GPS is spoofed to show all workers inside the affected city
+4. All payouts are routed to 3–5 UPI IDs controlled by the ring
+5. ₹2.5 lakh exits the liquidity pool before any alert fires
 
-#### Layer 1 — Registration-Time Signals
+Simple GPS verification fails here because the GPS coordinates look valid — they’re just fabricated. The attack is designed to pass single-account checks. The defence must operate at the **network level**, not the account level.
 
-- **Platform Worker ID verification** — Cross-reference with delivery platform APIs (Zomato/Swiggy partner IDs). Fake accounts cannot produce valid platform IDs.
-- **Device fingerprinting** — One device = one account. Multiple accounts on the same device are flagged immediately.
-- **Phone number velocity** — More than 2 OTP requests from the same device in 24 hours triggers a soft block.
-- **UPI ID uniqueness** — One UPI ID cannot be linked to more than one worker account. Fraud rings reuse UPI IDs.
+### Defense Architecture — 5 Layers
 
-#### Layer 2 — Claim-Time Signals
+#### Layer 1 — Registration-Time Signals (Stop fakes before they enter)
 
-| Signal | Fraud Indicator | Detection Method |
+- **Platform Worker ID verification** — Every account must supply a valid Zomato/Swiggy/Blinkit partner ID. These IDs are cross-referenced via platform APIs. A fraud ring cannot generate 500 valid partner IDs.
+- **Device fingerprinting** — One device = one account. The app captures a device fingerprint on first launch. Multiple accounts from the same device are hard-blocked.
+- **OTP velocity** — More than 2 OTP requests from the same device in 24 hours triggers a soft block. Bulk SIM farms are detected here.
+- **UPI ID uniqueness** — One UPI ID = one worker account. Fraud rings reuse UPI IDs across mule accounts. This is a hard constraint enforced at the DB level.
+
+#### Layer 2 — Claim-Time Signals (Catch what slips through registration)
+
+| Signal | What fraud looks like | How we detect it |
 |---|---|---|
-| GPS coordinates | Spoofed location | Cross-check GPS with registered pincode + cell tower triangulation |
-| Platform activity | Worker not online | API call to platform to verify active session during event window |
-| Claim velocity | Ring files simultaneously | Rate limit: max 1 claim per disruption event per worker |
-| Payout destination | Multiple accounts → same UPI | Graph analysis: flag UPI IDs receiving > 3 payouts in same event |
-| Claim timing | Filed < 30s after event | Suspicious speed flag (+15 fraud score) |
-| Duplicate event | Same event, same worker | Hard block — duplicate claims rejected at DB level |
+| GPS coordinates | Spoofed to match disruption city | Cross-check against registered pincode + cell tower data |
+| Platform session | Worker offline during event | API call to platform: was this worker’s app active? |
+| Claim velocity | 500 claims in 5 minutes | Rate limit: 1 claim per event per worker, enforced at DB |
+| Payout destination | All route to same 3 UPIs | Graph query: flag any UPI receiving > 3 payouts in same event |
+| Claim timing | Filed < 30s after event creation | Suspicious speed flag (+15 fraud score) |
+| Duplicate claim | Same worker, same event | Hard block at DB level before fraud engine even runs |
 
-#### Layer 3 — Network-Level Fraud Ring Detection
+#### Layer 3 — Network-Level Fraud Ring Detection (The key layer for coordinated attacks)
 
-This is the key layer for coordinated attacks:
+Individual account checks will not catch a ring. The ring is designed to pass them. The defence must look at the **cluster**:
 
 ```
 Fraud Ring Detection Algorithm:
 
-1. Build a bipartite graph:
-   - Nodes: Worker accounts + Disruption events
-   - Edges: Claims filed
+1. Build a bipartite graph every 5 minutes during an active disruption event:
+   Nodes  : Worker accounts + Disruption events
+   Edges  : Claims filed
 
-2. Flag clusters where:
-   - ≥ 10 accounts claim the same event within 5 minutes
-   - All accounts were registered within the last 7 days
-   - All accounts share the same device subnet or IP range
-   - All payouts route to ≤ 3 unique UPI IDs
+2. Flag a cluster if ALL of the following are true:
+   → ≥ 10 accounts claimed the same event within 5 minutes
+   → ≥ 70% of those accounts were registered within the last 7 days
+   → ≥ 60% share the same device subnet or IP range
+   → Payouts from the cluster route to ≤ 5 unique UPI IDs
 
-3. Action:
-   - Freeze all payouts in the cluster
-   - Escalate to manual review queue
-   - Blacklist device fingerprints and UPI IDs
+3. Action on flagged cluster:
+   → Freeze ALL payouts in the cluster immediately
+   → Escalate to manual review queue with full cluster graph
+   → Blacklist device fingerprints, IP ranges, and UPI IDs
+   → Genuine workers in the cluster receive provisional 50% payout
+      pending review (completed within 24 hours)
 ```
 
-#### Layer 4 — Behavioral Anomaly Detection (Phase 2 ML)
+This algorithm catches the Market Crash scenario directly: 500 accounts, same event, same time window, payouts to a handful of UPIs — every condition fires.
 
-The Isolation Forest model is trained to detect anomalies across:
-- `city_match` — GPS vs registered city
-- `platform_active` — Platform session during event
-- `claims_this_week` — Weekly claim frequency
-- `time_delta_seconds` — Speed of claim after event
-- `active_hours_ratio` — Proportion of day affected
-- `claim_amount_ratio` — Claimed vs maximum possible
+#### Layer 4 — Isolation Forest Anomaly Detection (Phase 2 ML)
 
-Workers whose feature vector is an outlier (Isolation Forest score < threshold) are flagged for review regardless of rule-based score.
+The rule-based layers catch known patterns. The Isolation Forest catches **unknown patterns** — fraud rings that have learned to avoid the rules.
 
-#### Layer 5 — Honest Worker Protection
+The model is trained on 6 behavioural features per claim. A fraud ring that spaces out its claims, uses different UPIs, and avoids speed flags will still produce an anomalous feature vector — because the combination of `city_match=0`, `platform_active=0`, `claim_amount_ratio=1.0` is statistically rare in clean data, even if no single rule fires.
 
-The most important design principle: **do not punish genuine workers**.
+#### Layer 5 — Honest Worker Protection (The hardest problem)
 
-- A worker in a flood zone who files 3 claims in a week is NOT automatically fraud — it may be a genuinely bad week.
-- Fraud score thresholds are calibrated to minimize false positives.
-- Workers flagged for review receive a **provisional payout of 50%** immediately, with the remainder released after review (within 24 hours).
-- Workers can appeal via the app with a single tap — no paperwork.
-- Consistent clean history reduces fraud score sensitivity for that worker over time (history factor).
+The hardest problem is not catching fraud. It is **not punishing genuine workers** in the process.
 
-#### Distinguishing the Faker from the Genuinely Stranded Worker
+A worker in Chennai who files 3 claims in a week during the northeast monsoon is not committing fraud — it was a genuinely bad week. The system must know the difference.
 
 | Signal | Genuine Worker | Fraud Account |
 |---|---|---|
-| Platform session | Active during disruption | Offline or no session |
-| GPS history | Consistent with registered zone | Teleports between cities |
-| Claim history | 1–2 claims/month, consistent | Sudden spike on new account |
-| Device | Single device, long tenure | New device, multiple accounts |
-| UPI destination | Personal UPI, consistent | Shared with other claimants |
-| Registration age | Weeks to months old | Registered days before event |
-| Delivery history | Verifiable via platform ID | No platform ID or invalid |
+| Platform session | Active during every disruption | Offline or no session data |
+| GPS history | Consistent with registered zone for months | Teleports between cities |
+| Claim history | 1–2 claims/month, matches weather events | Sudden spike on a brand-new account |
+| Device | Single device, used for months | New device, registered days before event |
+| UPI destination | Personal UPI, used consistently | Shared with 10+ other claimants |
+| Registration age | Weeks to months old | Registered 1–7 days before the event |
+| Delivery history | Verifiable platform ID with order history | No platform ID or invalid ID |
+
+**Protections for genuine workers:**
+- Workers flagged for review receive **50% provisional payout immediately** — they are not left with nothing while we investigate.
+- Review is completed within **24 hours**.
+- Workers can appeal with a single tap — no paperwork, no calls.
+- A clean claim history over time **reduces fraud score sensitivity** for that worker (history factor in the premium engine).
+- Fraud thresholds are calibrated to minimise false positives — we accept a small increase in fraud loss to avoid wrongly rejecting genuine claims.
 
 ---
 
