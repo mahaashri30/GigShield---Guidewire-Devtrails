@@ -101,6 +101,11 @@ class ApiService {
     return res.data;
   }
 
+  Future<Map<String, dynamic>> getPlatformEarnings(String platform) async {
+    final res = await _dio.get('/workers/platform-earnings', queryParameters: {'platform': platform});
+    return res.data;
+  }
+
   Future<Map<String, dynamic>> getDashboard() async {
     final res = await _dio.get('/workers/dashboard');
     return res.data;

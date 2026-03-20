@@ -5,6 +5,8 @@ from app.database import get_db
 from app.models.models import Worker, Policy, Claim, DisruptionEvent, PolicyStatus
 from app.schemas.schemas import WorkerCreate, WorkerUpdate, WorkerResponse, WorkerDashboard
 from app.services.auth_service import get_current_worker
+from app.services.platform_service import fetch_platform_earnings
+from datetime import datetime, timezone
 
 router = APIRouter()
 
@@ -15,17 +17,38 @@ async def register_worker(
     db: AsyncSession = Depends(get_db),
     current_worker: Worker = Depends(get_current_worker),
 ):
-    """Complete worker registration after OTP verification"""
+    """Complete worker registration — auto-fetches avg earnings from platform API"""
     current_worker.name = payload.name
     current_worker.platform = payload.platform
     current_worker.city = payload.city
     current_worker.pincode = payload.pincode
     current_worker.upi_id = payload.upi_id
     current_worker.platform_worker_id = payload.platform_worker_id
+
+    # Auto-fetch avg daily earnings from platform using worker's phone number
+    earnings_data = await fetch_platform_earnings(
+        phone=current_worker.phone,
+        platform=payload.platform.value,
+    )
+    current_worker.avg_daily_earnings = earnings_data["avg_daily_earnings"]
+
     current_worker.is_verified = True
     await db.commit()
     await db.refresh(current_worker)
     return current_worker
+
+
+@router.get("/platform-earnings", response_model=dict)
+async def get_platform_earnings(
+    platform: str,
+    current_worker: Worker = Depends(get_current_worker),
+):
+    """Fetch earnings data from the worker's platform using their phone number.
+    Called during onboarding to show the worker what earnings were detected."""
+    return await fetch_platform_earnings(
+        phone=current_worker.phone,
+        platform=platform,
+    )
 
 
 @router.get("/me", response_model=WorkerResponse)
@@ -52,14 +75,14 @@ async def get_dashboard(
     current_worker: Worker = Depends(get_current_worker),
 ):
     """Get worker dashboard data"""
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     # Active policy
     result = await db.execute(
         select(Policy).where(
             Policy.worker_id == current_worker.id,
             Policy.status == PolicyStatus.ACTIVE,
-            Policy.end_date >= datetime.utcnow(),
+            Policy.end_date >= datetime.now(timezone.utc),
         )
     )
     active_policy = result.scalar_one_or_none()

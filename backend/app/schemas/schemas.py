@@ -31,6 +31,7 @@ class WorkerCreate(BaseModel):
     pincode: str
     upi_id: Optional[str] = None
     platform_worker_id: Optional[str] = None
+    avg_daily_earnings: Optional[float] = None
 
 class WorkerUpdate(BaseModel):
     name: Optional[str] = None

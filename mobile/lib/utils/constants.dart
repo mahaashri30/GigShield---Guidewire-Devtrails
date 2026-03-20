@@ -54,13 +54,13 @@ class AppConstants {
     'Kolkata',
   ];
 
-  // Platforms
+  // Platforms — quick-commerce & food delivery (persona: Blinkit/Zepto/Swiggy Instamart)
   static const List<Map<String, String>> platforms = [
-    {'value': 'zomato', 'label': 'Zomato', 'color': 'E23744'},
-    {'value': 'swiggy', 'label': 'Swiggy', 'color': 'FC8019'},
-    {'value': 'dunzo', 'label': 'Dunzo', 'color': '00C28E'},
-    {'value': 'blinkit', 'label': 'Blinkit', 'color': 'F8C002'},
-    {'value': 'zepto', 'label': 'Zepto', 'color': '6C2BF5'},
-    {'value': 'amazon', 'label': 'Amazon', 'color': 'FF9900'},
+    {'value': 'blinkit',          'label': 'Blinkit',           'color': 'F8C002'},
+    {'value': 'zepto',            'label': 'Zepto',             'color': '6C2BF5'},
+    {'value': 'swiggy_instamart', 'label': 'Swiggy Instamart',  'color': 'FC8019'},
+    {'value': 'zomato',           'label': 'Zomato',            'color': 'E23744'},
+    {'value': 'amazon',           'label': 'Amazon',            'color': 'FF9900'},
+    {'value': 'bigbasket',        'label': 'BigBasket',         'color': '84C225'},
   ];
 }

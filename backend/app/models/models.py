@@ -11,12 +11,12 @@ def gen_uuid():
 
 
 class Platform(str, enum.Enum):
-    ZOMATO = "zomato"
-    SWIGGY = "swiggy"
-    DUNZO = "dunzo"
-    BLINKIT = "blinkit"
-    ZEPTO = "zepto"
-    AMAZON = "amazon"
+    ZOMATO           = "zomato"
+    SWIGGY_INSTAMART = "swiggy_instamart"
+    BLINKIT          = "blinkit"
+    ZEPTO            = "zepto"
+    AMAZON           = "amazon"
+    BIGBASKET        = "bigbasket"
 
 
 class PolicyTier(str, enum.Enum):
