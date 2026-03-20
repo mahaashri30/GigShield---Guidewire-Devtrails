@@ -117,17 +117,34 @@ class HomeScreen extends ConsumerWidget {
 
   void _simulate(BuildContext context, WidgetRef ref, String city, String pincode) async {
     final messenger = ScaffoldMessenger.of(context);
+    final api = ref.read(apiServiceProvider);
     try {
-      final events = await ref.read(apiServiceProvider).simulateDisruption(city, pincode);
+      final events = await api.simulateDisruption(city, pincode);
       if (events.isEmpty) {
         messenger.showSnackBar(const SnackBar(content: Text('No disruptions detected in your area right now')));
-      } else {
-        messenger.showSnackBar(SnackBar(
-          content: Text('${events.length} disruption(s) detected in $city!'),
-          backgroundColor: AppTheme.warning,
-        ));
-        ref.invalidate(dashboardProvider);
+        return;
       }
+
+      // Auto-trigger a claim for the first event
+      final eventId = events.first['id'] as String?;
+      if (eventId != null) {
+        try {
+          await api.triggerClaim(eventId);
+          messenger.showSnackBar(SnackBar(
+            content: Text('${events.length} disruption(s) detected — claim auto-triggered!'),
+            backgroundColor: AppTheme.success,
+          ));
+        } catch (claimErr) {
+          // Disruption created but claim failed (e.g. no active policy)
+          messenger.showSnackBar(SnackBar(
+            content: Text('Disruption detected but no active policy to claim against.'),
+            backgroundColor: AppTheme.warning,
+          ));
+        }
+      }
+
+      ref.invalidate(dashboardProvider);
+      ref.invalidate(claimsProvider);
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.danger));
     }
@@ -279,13 +296,13 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _DisruptionTile extends StatelessWidget {
+class _DisruptionTile extends ConsumerWidget {
   final Map<String, dynamic> data;
   final String? policyId;
   const _DisruptionTile({required this.data, this.policyId});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final type = data['disruption_type'] as String? ?? '';
     final severity = data['severity'] as String? ?? 'moderate';
     final dss = (data['dss_multiplier'] as num?)?.toDouble() ?? 0.3;
@@ -325,7 +342,7 @@ class _DisruptionTile extends StatelessWidget {
           ),
           if (policyId != null)
             TextButton(
-              onPressed: () => _triggerClaim(context, data['id'] as String?),
+              onPressed: () => _triggerClaim(context, ref, data['id'] as String?),
               child: const Text('Claim →', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
             ),
         ],
@@ -333,12 +350,20 @@ class _DisruptionTile extends StatelessWidget {
     );
   }
 
-  void _triggerClaim(BuildContext context, String? eventId) {
+  void _triggerClaim(BuildContext context, WidgetRef ref, String? eventId) async {
     if (eventId == null) return;
-    // Navigate to claims to trigger
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Claim triggered automatically! Check Claims tab.')),
-    );
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(apiServiceProvider).triggerClaim(eventId);
+      ref.invalidate(dashboardProvider);
+      ref.invalidate(claimsProvider);
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Claim submitted! Check Claims tab.'),
+        backgroundColor: Colors.green,
+      ));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Claim failed: $e'), backgroundColor: AppTheme.danger));
+    }
   }
 }
 
