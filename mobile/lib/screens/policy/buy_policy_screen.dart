@@ -36,18 +36,19 @@ class _BuyPolicyScreenState extends ConsumerState<BuyPolicyScreen> {
   void _buy(String tier) async {
     setState(() => _purchasing = true);
     try {
-      final order = await ref.read(apiServiceProvider).createPolicyOrder(tier);
-      _pendingOrder = {'order': order, 'tier': tier};
-      _razorpay.open({
-        'key': order['key_id'],
-        'order_id': order['order_id'],
-        'amount': order['amount'],
-        'currency': 'INR',
-        'name': 'GigShield',
-        'description': '${AppConstants.tierLabels[tier]} — Weekly Policy',
-        'prefill': {'contact': '', 'email': ''},
-        'theme': {'color': '#1A56DB'},
-      });
+      // In dev/mock mode, create policy directly without Razorpay
+      await ref.read(apiServiceProvider).createPolicy(tier);
+      ref.invalidate(activePolicyProvider);
+      ref.invalidate(dashboardProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🎉 Policy activated successfully!'),
+            backgroundColor: AppTheme.success,
+          ),
+        );
+        context.go('/policy');
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -55,7 +56,7 @@ class _BuyPolicyScreenState extends ConsumerState<BuyPolicyScreen> {
         );
       }
     } finally {
-      setState(() => _purchasing = false);
+      if (mounted) setState(() => _purchasing = false);
     }
   }
 

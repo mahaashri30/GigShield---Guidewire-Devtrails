@@ -49,6 +49,8 @@ def calculate_fraud_score(
         flags.append(f"DUPLICATE_CLAIM: Already claimed this disruption event")
 
     # Rule 5: Claim filed suspiciously fast (< 30 seconds after event)
+    # Skip this check when time_delta is negative or zero (simulate flow creates
+    # the event and claim in the same request, so delta is always ~0)
     time_delta = (claim_created_at - event_started_at).total_seconds()
     if 0 < time_delta < 30:
         score += 15

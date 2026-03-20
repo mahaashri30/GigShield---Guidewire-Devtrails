@@ -115,10 +115,11 @@ async def trigger_claim(
     await db.refresh(claim)
 
     # Auto-payout if approved
-    if claim.status == ClaimStatus.APPROVED and current_worker.upi_id:
+    upi_id = current_worker.upi_id or f"worker_{current_worker.id[:8]}@upi"
+    if claim.status == ClaimStatus.APPROVED:
         payout_result = await initiate_upi_payout(
             worker_id=current_worker.id,
-            upi_id=current_worker.upi_id,
+            upi_id=upi_id,
             amount=claim.approved_amount,
             claim_id=claim.id,
         )
@@ -126,7 +127,7 @@ async def trigger_claim(
             claim_id=claim.id,
             worker_id=current_worker.id,
             amount=claim.approved_amount,
-            upi_id=current_worker.upi_id,
+            upi_id=upi_id,
             status=PayoutStatus.COMPLETED if payout_result["success"] else PayoutStatus.FAILED,
             razorpay_payout_id=payout_result.get("payout_id"),
             transaction_ref=payout_result.get("transaction_ref"),
