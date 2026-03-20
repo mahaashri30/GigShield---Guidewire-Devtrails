@@ -1,6 +1,5 @@
 """
 Payout Service - Razorpay X Test Mode Integration
-Razorpay X Payouts API: https://razorpay.com/docs/razorpayx/api/payouts/
 """
 import uuid
 import asyncio
@@ -10,9 +9,7 @@ from app.config import settings
 
 
 def _get_client() -> razorpay.Client:
-    return razorpay.Client(
-        auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET)
-    )
+    return razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
 
 
 def _is_mock() -> bool:
@@ -25,19 +22,12 @@ async def initiate_upi_payout(
     amount: float,
     claim_id: str,
 ) -> dict:
-    """
-    Initiates a UPI payout via Razorpay X Payouts API.
-    Falls back to mock if keys are not configured.
-    Amount is in INR — converted to paise for Razorpay.
-    """
     if _is_mock():
         return await _mock_payout(upi_id, amount, claim_id)
 
     try:
         client = _get_client()
-        amount_paise = int(amount * 100)  # Razorpay expects paise
-
-        # Run blocking Razorpay call in thread pool to avoid blocking event loop
+        amount_paise = int(amount * 100)
         loop = asyncio.get_event_loop()
         payout = await loop.run_in_executor(
             None,
@@ -61,7 +51,6 @@ async def initiate_upi_payout(
                 "narration": "GigShield Claim Payout",
             })
         )
-
         return {
             "success": payout.get("status") in ("processing", "processed", "queued"),
             "payout_id": payout.get("id"),
@@ -69,10 +58,8 @@ async def initiate_upi_payout(
             "upi_id": upi_id,
             "amount": amount,
             "status": payout.get("status"),
-            "completed_at": datetime.utcnow().isoformat(),
             "message": f"₹{amount:.0f} payout initiated to {upi_id}",
         }
-
     except Exception as e:
         return {
             "success": False,
@@ -84,25 +71,15 @@ async def initiate_upi_payout(
 
 
 async def _mock_payout(upi_id: str, amount: float, claim_id: str) -> dict:
-    """Fallback mock when Razorpay keys are not configured."""
-    await asyncio.sleep(0.5)
-    import random
-    success = random.random() < 0.95
-    if success:
-        return {
-            "success": True,
-            "payout_id": f"pout_mock_{uuid.uuid4().hex[:12]}",
-            "transaction_ref": f"GS{claim_id[:8].upper()}",
-            "upi_id": upi_id,
-            "amount": amount,
-            "status": "completed",
-            "completed_at": datetime.utcnow().isoformat(),
-            "message": f"₹{amount:.0f} credited to {upi_id}",
-        }
+    """Mock payout — always succeeds in dev/demo mode."""
+    await asyncio.sleep(0.3)
     return {
-        "success": False,
-        "payout_id": None,
-        "transaction_ref": None,
-        "status": "failed",
-        "message": "UPI transfer failed. Will retry.",
+        "success": True,
+        "payout_id": f"pout_mock_{uuid.uuid4().hex[:12]}",
+        "transaction_ref": f"GS{claim_id[:8].upper()}",
+        "upi_id": upi_id,
+        "amount": amount,
+        "status": "completed",
+        "completed_at": datetime.utcnow().isoformat(),
+        "message": f"₹{amount:.0f} credited to {upi_id}",
     }

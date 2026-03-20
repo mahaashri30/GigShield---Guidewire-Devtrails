@@ -6,7 +6,7 @@ from app.database import get_db
 from app.models.models import Worker, Policy, Claim, DisruptionEvent, Payout, PolicyStatus, ClaimStatus, PayoutStatus
 from app.schemas.schemas import ClaimResponse
 from app.services.auth_service import get_current_worker
-from app.services.premium_service import calculate_payout
+from app.services.premium_service import calculate_payout, MAX_DAILY_PAYOUT, MAX_WEEKLY_PAYOUT
 from app.services.fraud_service import calculate_fraud_score
 from app.services.payout_service import initiate_upi_payout
 
@@ -19,13 +19,14 @@ async def trigger_claim(
     db: AsyncSession = Depends(get_db),
     current_worker: Worker = Depends(get_current_worker),
 ):
-    """Manually trigger a claim for a disruption event (auto-triggered by Celery in prod)"""
+    now = datetime.now(timezone.utc)
+
     # Get active policy
     result = await db.execute(
         select(Policy).where(
             Policy.worker_id == current_worker.id,
             Policy.status == PolicyStatus.ACTIVE,
-            Policy.end_date >= datetime.now(timezone.utc),
+            Policy.end_date >= now,
         )
     )
     policy = result.scalar_one_or_none()
@@ -41,18 +42,18 @@ async def trigger_claim(
     if event.city.lower() != current_worker.city.lower():
         raise HTTPException(status_code=400, detail="Disruption event is not in your city")
 
-    # Check for duplicate claim
-    dup_result = await db.execute(
+    # Duplicate claim check
+    dup = await db.execute(
         select(Claim).where(
             Claim.worker_id == current_worker.id,
             Claim.disruption_event_id == disruption_event_id,
         )
     )
-    if dup_result.scalar_one_or_none():
+    if dup.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Already claimed this disruption event")
 
-    # Count claims this week
-    week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    # Claims this week (for fraud scoring)
+    week_ago = now - timedelta(days=7)
     count_result = await db.execute(
         select(func.count(Claim.id)).where(
             Claim.worker_id == current_worker.id,
@@ -67,19 +68,44 @@ async def trigger_claim(
         event_city=event.city,
         worker_pincode=current_worker.pincode,
         event_pincode=event.pincode or "",
-        was_platform_active=True,  # Mock: assume active
+        was_platform_active=True,
         claims_this_week=claims_this_week,
         claims_same_event=0,
         event_started_at=event.started_at,
-        claim_created_at=datetime.now(timezone.utc),
+        claim_created_at=now,
     )
 
-    # Calculate payout
+    # Weekly cap remaining = tier weekly cap - total already claimed this policy week
+    weekly_cap     = MAX_WEEKLY_PAYOUT[policy.tier]
+    weekly_claimed = float(policy.total_claimed or 0)
+    weekly_remaining = max(0.0, weekly_cap - weekly_claimed)
+
+    if weekly_remaining <= 0:
+        raise HTTPException(status_code=400, detail="Weekly payout cap reached for this policy")
+
+    # Daily cap remaining
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_result = await db.execute(
+        select(func.coalesce(func.sum(Claim.approved_amount), 0.0)).where(
+            Claim.worker_id == current_worker.id,
+            Claim.status.in_([ClaimStatus.APPROVED, ClaimStatus.PAID]),
+            Claim.created_at >= today_start,
+        )
+    )
+    claimed_today = float(today_result.scalar() or 0)
+
+    # Effective cap = min(daily remaining, weekly remaining)
+    daily_cap       = MAX_DAILY_PAYOUT[policy.tier]
+    daily_remaining = max(0.0, daily_cap - claimed_today)
+    effective_cap   = min(daily_remaining, weekly_remaining)
+
+    # Payout = income shortfall, capped at effective_cap
     payout_data = calculate_payout(
         worker_daily_avg=current_worker.avg_daily_earnings,
         dss_multiplier=event.dss_multiplier,
         active_hours_ratio=1.0,
         tier=policy.tier,
+        existing_claimed_today=daily_cap - effective_cap,  # pass what's already used
     )
 
     claim = Claim(
@@ -97,26 +123,25 @@ async def trigger_claim(
     )
 
     if fraud_result["auto_approve"]:
+        approved = min(payout_data["income_shortfall"], effective_cap)
         claim.status = ClaimStatus.APPROVED
-        claim.approved_amount = payout_data["approved_amount"]
-        claim.processed_at = datetime.now(timezone.utc)
-
-        # Update policy totals
-        policy.total_claimed += payout_data["approved_amount"]
+        claim.approved_amount = round(approved, 2)
+        claim.processed_at = now
+        policy.total_claimed = round(weekly_claimed + approved, 2)
         policy.claims_count += 1
 
     elif fraud_result["auto_reject"]:
         claim.status = ClaimStatus.REJECTED
         claim.rejection_reason = "; ".join(fraud_result["flags"])
-        claim.processed_at = datetime.now(timezone.utc)
+        claim.processed_at = now
 
     db.add(claim)
     await db.commit()
     await db.refresh(claim)
 
-    # Auto-payout if approved
-    upi_id = current_worker.upi_id or f"worker_{current_worker.id[:8]}@upi"
-    if claim.status == ClaimStatus.APPROVED:
+    # Auto-payout if approved and amount > 0
+    if claim.status == ClaimStatus.APPROVED and (claim.approved_amount or 0) > 0:
+        upi_id = current_worker.upi_id or f"worker_{current_worker.id[:8]}@upi"
         payout_result = await initiate_upi_payout(
             worker_id=current_worker.id,
             upi_id=upi_id,
@@ -131,7 +156,7 @@ async def trigger_claim(
             status=PayoutStatus.COMPLETED if payout_result["success"] else PayoutStatus.FAILED,
             razorpay_payout_id=payout_result.get("payout_id"),
             transaction_ref=payout_result.get("transaction_ref"),
-            completed_at=datetime.now(timezone.utc) if payout_result["success"] else None,
+            completed_at=now if payout_result["success"] else None,
         )
         if payout_result["success"]:
             claim.status = ClaimStatus.PAID
