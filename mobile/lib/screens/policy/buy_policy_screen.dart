@@ -36,19 +36,20 @@ class _BuyPolicyScreenState extends ConsumerState<BuyPolicyScreen> {
   void _buy(String tier) async {
     setState(() => _purchasing = true);
     try {
-      // In dev/mock mode, create policy directly without Razorpay
-      await ref.read(apiServiceProvider).createPolicy(tier);
-      ref.invalidate(activePolicyProvider);
-      ref.invalidate(dashboardProvider);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('🎉 Policy activated successfully!'),
-            backgroundColor: AppTheme.success,
-          ),
-        );
-        context.go('/policy');
-      }
+      final order = await ref.read(apiServiceProvider).createPolicyOrder(tier);
+      _pendingOrder = {'order': order, 'tier': tier};
+
+      _razorpay.open({
+        'key': order['key_id'],
+        'order_id': order['order_id'],
+        'amount': order['amount'],
+        'currency': 'INR',
+        'name': 'GigShield',
+        'description': '${AppConstants.tierLabels[tier] ?? tier} — Weekly Policy',
+        'prefill': {'contact': '', 'email': 'worker@gigshield.in'},
+        'theme': {'color': '#1A56DB'},
+        'modal': {'confirm_close': true},
+      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -62,13 +63,13 @@ class _BuyPolicyScreenState extends ConsumerState<BuyPolicyScreen> {
 
   void _onPaymentSuccess(PaymentSuccessResponse response) async {
     final order = _pendingOrder?['order'] as Map<String, dynamic>?;
-    final tier = _pendingOrder?['tier'] as String?;
+    final tier  = _pendingOrder?['tier']  as String?;
     if (order == null || tier == null) return;
     try {
       await ref.read(apiServiceProvider).verifyPolicyPayment({
-        'razorpay_order_id': response.orderId,
+        'razorpay_order_id':   response.orderId,
         'razorpay_payment_id': response.paymentId,
-        'razorpay_signature': response.signature,
+        'razorpay_signature':  response.signature,
         'tier': tier,
       });
       ref.invalidate(activePolicyProvider);
@@ -107,7 +108,7 @@ class _BuyPolicyScreenState extends ConsumerState<BuyPolicyScreen> {
   @override
   Widget build(BuildContext context) {
     final selectedTier = ref.watch(selectedTierProvider);
-    final quoteAsync = ref.watch(premiumQuoteProvider(selectedTier));
+    final quoteAsync   = ref.watch(premiumQuoteProvider(selectedTier));
 
     return Scaffold(
       backgroundColor: AppTheme.surface,
@@ -135,7 +136,6 @@ class _BuyPolicyScreenState extends ConsumerState<BuyPolicyScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Tier cards
                   ..._tiers.map((t) => _TierCard(
                     tier: t,
                     selected: selectedTier == t['value'],
@@ -144,7 +144,6 @@ class _BuyPolicyScreenState extends ConsumerState<BuyPolicyScreen> {
 
                   const SizedBox(height: 24),
 
-                  // AI adjusted quote
                   quoteAsync.when(
                     loading: () => const Center(child: CircularProgressIndicator()),
                     error: (_, __) => const SizedBox.shrink(),
@@ -168,8 +167,9 @@ class _BuyPolicyScreenState extends ConsumerState<BuyPolicyScreen> {
               data: (quote) => ElevatedButton(
                 onPressed: _purchasing ? null : () => _buy(selectedTier),
                 child: _purchasing
-                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : Text('Activate for ₹${(quote['adjusted_premium'] as num).toStringAsFixed(0)}/week'),
+                    ? const SizedBox(height: 20, width: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : Text('Pay ₹${(quote['adjusted_premium'] as num).toStringAsFixed(0)} via Razorpay'),
               ),
             ),
           ),
@@ -216,7 +216,6 @@ class _TierCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPopular = tier['popular'] == 'true';
-
     return GestureDetector(
       onTap: onSelect,
       child: AnimatedContainer(
@@ -290,10 +289,10 @@ class _QuoteBreakdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base = (quote['base_premium'] as num).toStringAsFixed(0);
-    final adjusted = (quote['adjusted_premium'] as num).toStringAsFixed(2);
-    final zone = (quote['zone_risk_multiplier'] as num).toStringAsFixed(2);
-    final season = (quote['season_factor'] as num).toStringAsFixed(2);
+    final base     = (quote['base_premium']          as num).toStringAsFixed(0);
+    final adjusted = (quote['adjusted_premium']       as num).toStringAsFixed(2);
+    final zone     = (quote['zone_risk_multiplier']   as num).toStringAsFixed(2);
+    final season   = (quote['season_factor']          as num).toStringAsFixed(2);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -313,11 +312,11 @@ class _QuoteBreakdown extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          _Row('Base premium', '₹$base'),
-          _Row('Zone risk factor', '×$zone'),
-          _Row('Season factor', '×$season'),
+          _Row('Base premium',       '₹$base'),
+          _Row('Zone risk factor',   '×$zone'),
+          _Row('Season factor',      '×$season'),
           const Divider(),
-          _Row('Your weekly premium', '₹$adjusted', bold: true),
+          _Row('Your weekly premium','₹$adjusted', bold: true),
         ],
       ),
     );
@@ -329,8 +328,12 @@ class _QuoteBreakdown extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(color: bold ? AppTheme.textPrimary : AppTheme.textSecondary, fontSize: 13)),
-          Text(val, style: TextStyle(fontWeight: bold ? FontWeight.w800 : FontWeight.w500, fontSize: 13, color: bold ? AppTheme.primary : AppTheme.textPrimary)),
+          Text(label, style: TextStyle(
+            color: bold ? AppTheme.textPrimary : AppTheme.textSecondary, fontSize: 13)),
+          Text(val, style: TextStyle(
+            fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
+            fontSize: 13,
+            color: bold ? AppTheme.primary : AppTheme.textPrimary)),
         ],
       ),
     );

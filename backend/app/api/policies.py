@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import razorpay
 import hmac
 import hashlib
@@ -19,15 +19,29 @@ def _razorpay_client():
     return razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
 
 
+def _is_mock():
+    return settings.RAZORPAY_KEY_ID == "rzp_test_mock"
+
+
 @router.post("/create-order", response_model=PolicyOrderResponse)
 async def create_order(
     payload: PolicyCreate,
     current_worker: Worker = Depends(get_current_worker),
 ):
-    """Create a Razorpay order for policy payment"""
     pincode = payload.pincode or current_worker.pincode
     premium_data = calculate_premium(tier=payload.tier, pincode=pincode)
     amount_paise = int(premium_data["adjusted_premium"] * 100)
+
+    if _is_mock():
+        # Return a fake order so the Flutter SDK still opens (test mode only)
+        return PolicyOrderResponse(
+            order_id=f"order_mock_{payload.tier.value}",
+            amount=amount_paise,
+            currency="INR",
+            tier=payload.tier.value,
+            adjusted_premium=premium_data["adjusted_premium"],
+            key_id=settings.RAZORPAY_KEY_ID,
+        )
 
     client = _razorpay_client()
     order = client.order.create({
@@ -56,8 +70,7 @@ async def verify_payment(
     db: AsyncSession = Depends(get_db),
     current_worker: Worker = Depends(get_current_worker),
 ):
-    """Verify Razorpay payment signature and activate policy"""
-    # Verify signature
+    # Verify Razorpay signature
     body = f"{payload.razorpay_order_id}|{payload.razorpay_payment_id}"
     expected = hmac.new(
         settings.RAZORPAY_KEY_SECRET.encode(),
@@ -68,38 +81,7 @@ async def verify_payment(
     if expected != payload.razorpay_signature:
         raise HTTPException(status_code=400, detail="Payment verification failed")
 
-    # Check no active policy exists
-    existing = await db.execute(
-        select(Policy).where(
-            Policy.worker_id == current_worker.id,
-            Policy.status == PolicyStatus.ACTIVE,
-            Policy.end_date >= datetime.utcnow(),
-        )
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Active policy already exists")
-
-    pincode = payload.pincode or current_worker.pincode
-    premium_data = calculate_premium(tier=payload.tier, pincode=pincode)
-
-    now = datetime.utcnow()
-    policy = Policy(
-        worker_id=current_worker.id,
-        tier=payload.tier,
-        status=PolicyStatus.ACTIVE,
-        weekly_premium=premium_data["adjusted_premium"],
-        base_premium=premium_data["base_premium"],
-        max_daily_payout=premium_data["max_daily_payout"],
-        max_weekly_payout=premium_data["max_weekly_payout"],
-        pincode=pincode,
-        city=current_worker.city,
-        start_date=now,
-        end_date=now + timedelta(days=7),
-    )
-    db.add(policy)
-    await db.commit()
-    await db.refresh(policy)
-    return policy
+    return await _activate_policy(payload.tier, payload.pincode, current_worker, db)
 
 
 @router.get("/quote", response_model=PremiumQuote)
@@ -107,7 +89,6 @@ async def get_quote(
     tier: PolicyTier = PolicyTier.SMART,
     current_worker: Worker = Depends(get_current_worker),
 ):
-    """Get premium quote for a given tier"""
     result = calculate_premium(
         tier=tier,
         pincode=current_worker.pincode,
@@ -123,39 +104,8 @@ async def create_policy(
     db: AsyncSession = Depends(get_db),
     current_worker: Worker = Depends(get_current_worker),
 ):
-    """Create a new weekly policy"""
-    # Check no active policy exists
-    existing = await db.execute(
-        select(Policy).where(
-            Policy.worker_id == current_worker.id,
-            Policy.status == PolicyStatus.ACTIVE,
-            Policy.end_date >= datetime.utcnow(),
-        )
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Active policy already exists for this week")
-
-    pincode = payload.pincode or current_worker.pincode
-    premium_data = calculate_premium(tier=payload.tier, pincode=pincode)
-
-    now = datetime.utcnow()
-    policy = Policy(
-        worker_id=current_worker.id,
-        tier=payload.tier,
-        status=PolicyStatus.ACTIVE,
-        weekly_premium=premium_data["adjusted_premium"],
-        base_premium=premium_data["base_premium"],
-        max_daily_payout=premium_data["max_daily_payout"],
-        max_weekly_payout=premium_data["max_weekly_payout"],
-        pincode=pincode,
-        city=current_worker.city,
-        start_date=now,
-        end_date=now + timedelta(days=7),
-    )
-    db.add(policy)
-    await db.commit()
-    await db.refresh(policy)
-    return policy
+    """Direct policy creation — used in dev/mock mode bypassing Razorpay."""
+    return await _activate_policy(payload.tier, payload.pincode, current_worker, db)
 
 
 @router.get("/", response_model=list[PolicyResponse])
@@ -176,14 +126,50 @@ async def get_active_policy(
     db: AsyncSession = Depends(get_db),
     current_worker: Worker = Depends(get_current_worker),
 ):
+    now = datetime.now(timezone.utc)
     result = await db.execute(
         select(Policy).where(
             Policy.worker_id == current_worker.id,
             Policy.status == PolicyStatus.ACTIVE,
-            Policy.end_date >= datetime.utcnow(),
+            Policy.end_date >= now,
         )
     )
     policy = result.scalar_one_or_none()
     if not policy:
         raise HTTPException(status_code=404, detail="No active policy found")
+    return policy
+
+
+async def _activate_policy(tier, pincode_override, worker: Worker, db: AsyncSession) -> Policy:
+    """Shared logic: check no active policy, create and return new one."""
+    now = datetime.now(timezone.utc)
+    existing = await db.execute(
+        select(Policy).where(
+            Policy.worker_id == worker.id,
+            Policy.status == PolicyStatus.ACTIVE,
+            Policy.end_date >= now,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Active policy already exists for this week")
+
+    pincode = pincode_override or worker.pincode
+    premium_data = calculate_premium(tier=tier, pincode=pincode)
+
+    policy = Policy(
+        worker_id=worker.id,
+        tier=tier,
+        status=PolicyStatus.ACTIVE,
+        weekly_premium=premium_data["adjusted_premium"],
+        base_premium=premium_data["base_premium"],
+        max_daily_payout=premium_data["max_daily_payout"],
+        max_weekly_payout=premium_data["max_weekly_payout"],
+        pincode=pincode,
+        city=worker.city,
+        start_date=now,
+        end_date=now + timedelta(days=7),
+    )
+    db.add(policy)
+    await db.commit()
+    await db.refresh(policy)
     return policy
