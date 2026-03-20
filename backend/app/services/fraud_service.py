@@ -3,8 +3,15 @@ Fraud Detection Engine - Phase 1 (Rule-Based)
 Phase 2 will add Isolation Forest ML model
 """
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
+
+
+def _utc(dt: datetime) -> datetime:
+    """Ensure datetime is timezone-aware UTC."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def calculate_fraud_score(
@@ -25,7 +32,7 @@ def calculate_fraud_score(
     score = 0.0
     flags = []
 
-    # Rule 1: City mismatch (GPS / city-level check)
+    # Rule 1: City mismatch
     if worker_city.lower() != event_city.lower():
         score += 40
         flags.append(f"CITY_MISMATCH: Worker in {worker_city}, event in {event_city}")
@@ -46,12 +53,13 @@ def calculate_fraud_score(
     # Rule 4: Duplicate claim for same event
     if claims_same_event >= 1:
         score += 50
-        flags.append(f"DUPLICATE_CLAIM: Already claimed this disruption event")
+        flags.append("DUPLICATE_CLAIM: Already claimed this disruption event")
 
     # Rule 5: Claim filed suspiciously fast (< 30 seconds after event)
-    # Skip this check when time_delta is negative or zero (simulate flow creates
-    # the event and claim in the same request, so delta is always ~0)
-    time_delta = (claim_created_at - event_started_at).total_seconds()
+    # Normalise to UTC-aware before subtracting to avoid TypeError with mixed
+    # naive/aware datetimes (event_started_at from DB is aware, claim_created_at
+    # from datetime.utcnow() was naive)
+    time_delta = (_utc(claim_created_at) - _utc(event_started_at)).total_seconds()
     if 0 < time_delta < 30:
         score += 15
         flags.append(f"SUSPICIOUS_SPEED: Claim filed {time_delta:.0f}s after event start")

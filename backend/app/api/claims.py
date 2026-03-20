@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.database import get_db
 from app.models.models import Worker, Policy, Claim, DisruptionEvent, Payout, PolicyStatus, ClaimStatus, PayoutStatus
 from app.schemas.schemas import ClaimResponse
@@ -25,7 +25,7 @@ async def trigger_claim(
         select(Policy).where(
             Policy.worker_id == current_worker.id,
             Policy.status == PolicyStatus.ACTIVE,
-            Policy.end_date >= datetime.utcnow(),
+            Policy.end_date >= datetime.now(timezone.utc),
         )
     )
     policy = result.scalar_one_or_none()
@@ -52,7 +52,7 @@ async def trigger_claim(
         raise HTTPException(status_code=400, detail="Already claimed this disruption event")
 
     # Count claims this week
-    week_ago = datetime.utcnow() - timedelta(days=7)
+    week_ago = datetime.now(timezone.utc) - timedelta(days=7)
     count_result = await db.execute(
         select(func.count(Claim.id)).where(
             Claim.worker_id == current_worker.id,
@@ -71,7 +71,7 @@ async def trigger_claim(
         claims_this_week=claims_this_week,
         claims_same_event=0,
         event_started_at=event.started_at,
-        claim_created_at=datetime.utcnow(),
+        claim_created_at=datetime.now(timezone.utc),
     )
 
     # Calculate payout
@@ -99,7 +99,7 @@ async def trigger_claim(
     if fraud_result["auto_approve"]:
         claim.status = ClaimStatus.APPROVED
         claim.approved_amount = payout_data["approved_amount"]
-        claim.processed_at = datetime.utcnow()
+        claim.processed_at = datetime.now(timezone.utc)
 
         # Update policy totals
         policy.total_claimed += payout_data["approved_amount"]
@@ -108,7 +108,7 @@ async def trigger_claim(
     elif fraud_result["auto_reject"]:
         claim.status = ClaimStatus.REJECTED
         claim.rejection_reason = "; ".join(fraud_result["flags"])
-        claim.processed_at = datetime.utcnow()
+        claim.processed_at = datetime.now(timezone.utc)
 
     db.add(claim)
     await db.commit()
@@ -131,7 +131,7 @@ async def trigger_claim(
             status=PayoutStatus.COMPLETED if payout_result["success"] else PayoutStatus.FAILED,
             razorpay_payout_id=payout_result.get("payout_id"),
             transaction_ref=payout_result.get("transaction_ref"),
-            completed_at=datetime.utcnow() if payout_result["success"] else None,
+            completed_at=datetime.now(timezone.utc) if payout_result["success"] else None,
         )
         if payout_result["success"]:
             claim.status = ClaimStatus.PAID
