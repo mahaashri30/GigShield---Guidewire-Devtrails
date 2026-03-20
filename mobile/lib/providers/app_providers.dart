@@ -11,20 +11,23 @@ class AuthState {
   final bool isLoggedIn;
   final bool isNewUser;
   final String? workerId;
+  final String? selectedPlatform;
   final bool isLoading;
   final String? error;
   const AuthState({
     this.isLoggedIn = false,
     this.isNewUser = false,
     this.workerId,
+    this.selectedPlatform,
     this.isLoading = false,
     this.error,
   });
-  AuthState copyWith({bool? isLoggedIn, bool? isNewUser, String? workerId, bool? isLoading, String? error}) =>
+  AuthState copyWith({bool? isLoggedIn, bool? isNewUser, String? workerId, String? selectedPlatform, bool? isLoading, String? error}) =>
       AuthState(
         isLoggedIn: isLoggedIn ?? this.isLoggedIn,
         isNewUser: isNewUser ?? this.isNewUser,
         workerId: workerId ?? this.workerId,
+        selectedPlatform: selectedPlatform ?? this.selectedPlatform,
         isLoading: isLoading ?? this.isLoading,
         error: error,
       );
@@ -79,6 +82,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> completeRegistration() async {
     state = state.copyWith(isLoggedIn: true, isNewUser: false);
+  }
+
+  void setPlatform(String platform) {
+    state = state.copyWith(selectedPlatform: platform);
   }
 
   Future<void> logout() async {

@@ -5,6 +5,7 @@ import 'package:gigshield/providers/app_providers.dart';
 import 'package:gigshield/screens/splash_screen.dart';
 import 'package:gigshield/screens/onboarding/phone_screen.dart';
 import 'package:gigshield/screens/onboarding/otp_screen.dart';
+import 'package:gigshield/screens/onboarding/platform_screen.dart';
 import 'package:gigshield/screens/onboarding/register_screen.dart';
 import 'package:gigshield/screens/home/home_screen.dart';
 import 'package:gigshield/screens/policy/policy_screen.dart';
@@ -20,7 +21,8 @@ class _AuthListenable extends ChangeNotifier {
   }
   final Ref _ref;
   bool get isLoggedIn => _ref.read(authProvider).isLoggedIn;
-  bool get isNewUser => _ref.read(authProvider).isNewUser;
+  bool get isNewUser  => _ref.read(authProvider).isNewUser;
+  bool get hasPlatform => _ref.read(authProvider).selectedPlatform != null;
 }
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -30,15 +32,22 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     initialLocation: '/splash',
     refreshListenable: listenable,
     redirect: (context, state) {
-      final isLoggedIn = listenable.isLoggedIn;
-      final isNewUser = listenable.isNewUser;
-      final onSplash = state.matchedLocation == '/splash';
-      final onRegister = state.matchedLocation == '/auth/register';
-      final onAuth = state.matchedLocation.startsWith('/auth');
+      final isLoggedIn  = listenable.isLoggedIn;
+      final isNewUser   = listenable.isNewUser;
+      final hasPlatform = listenable.hasPlatform;
+      final loc         = state.matchedLocation;
+      final onSplash    = loc == '/splash';
+      final onAuth      = loc.startsWith('/auth');
+      final onPlatform  = loc == '/auth/platform';
+      final onRegister  = loc == '/auth/register';
 
-      if (onSplash) return null;
-      if (isLoggedIn) return onAuth ? '/home' : null;
-      if (isNewUser) return onRegister ? null : '/auth/register';
+      if (onSplash)    return null;
+      if (isLoggedIn)  return onAuth ? '/home' : null;
+      // New user flow: platform first, then register
+      if (isNewUser) {
+        if (!hasPlatform) return onPlatform ? null : '/auth/platform';
+        return onRegister ? null : '/auth/register';
+      }
       if (!onAuth) return '/auth/phone';
       return null;
     },
@@ -54,6 +63,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           final phone = state.extra as String? ?? '';
           return OtpScreen(phone: phone);
         },
+      ),
+      GoRoute(
+        path: '/auth/platform',
+        builder: (_, __) => const PlatformScreen(),
       ),
       GoRoute(
         path: '/auth/register',
