@@ -48,6 +48,7 @@ app.include_router(disruptions.router, prefix="/api/v1/disruptions", tags=["Disr
 
 
 @app.get("/")
+@app.head("/")
 async def root():
     return {
         "app": "GigShield",
@@ -58,5 +59,6 @@ async def root():
 
 
 @app.get("/health")
+@app.head("/health")
 async def health():
     return {"status": "healthy"}
