@@ -115,7 +115,6 @@ async def trigger_claim(
         dss_multiplier=event.dss_multiplier,
         active_hours_ratio=1.0,
         tier=policy.tier,
-        existing_claimed_today=daily_cap - effective_cap,  # pass what's already used
     )
 
     claim = Claim(
