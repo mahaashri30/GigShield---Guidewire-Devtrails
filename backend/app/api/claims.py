@@ -26,12 +26,19 @@ async def trigger_claim(
         select(Policy).where(
             Policy.worker_id == current_worker.id,
             Policy.status == PolicyStatus.ACTIVE,
-            Policy.end_date >= now,
-        )
+        ).order_by(Policy.created_at.desc())
     )
-    policy = result.scalar_one_or_none()
+    policy = result.scalars().first()
     if not policy:
         raise HTTPException(status_code=400, detail="No active policy found")
+    # Handle timezone-naive end_date from DB
+    end_date = policy.end_date
+    if end_date.tzinfo is None:
+        end_date = end_date.replace(tzinfo=timezone.utc)
+    if end_date < now:
+        policy.status = PolicyStatus.EXPIRED
+        await db.commit()
+        raise HTTPException(status_code=400, detail="Policy has expired")
 
     # Get disruption event
     result = await db.execute(select(DisruptionEvent).where(DisruptionEvent.id == disruption_event_id))

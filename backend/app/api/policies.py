@@ -127,21 +127,30 @@ async def get_active_policy(
     current_worker: Worker = Depends(get_current_worker),
 ):
     now = datetime.now(timezone.utc)
+    # Try active + not expired first
     result = await db.execute(
         select(Policy).where(
             Policy.worker_id == current_worker.id,
             Policy.status == PolicyStatus.ACTIVE,
-            Policy.end_date >= now,
-        )
+        ).order_by(Policy.created_at.desc())
     )
-    policy = result.scalar_one_or_none()
+    policy = result.scalars().first()
     if not policy:
+        raise HTTPException(status_code=404, detail="No active policy found")
+    # Auto-fix: if end_date is timezone-naive, make it aware
+    end_date = policy.end_date
+    if end_date.tzinfo is None:
+        from datetime import timezone as tz
+        end_date = end_date.replace(tzinfo=tz.utc)
+    if end_date < now:
+        policy.status = PolicyStatus.EXPIRED
+        await db.commit()
         raise HTTPException(status_code=404, detail="No active policy found")
     return policy
 
 
 async def _activate_policy(tier, pincode_override, worker: Worker, db: AsyncSession) -> Policy:
-    """Shared logic: check no active policy, create and return new one."""
+    """Expire any existing active policy, then create and return a new one."""
     now = datetime.now(timezone.utc)
     existing = await db.execute(
         select(Policy).where(
@@ -150,8 +159,11 @@ async def _activate_policy(tier, pincode_override, worker: Worker, db: AsyncSess
             Policy.end_date >= now,
         )
     )
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Active policy already exists for this week")
+    old = existing.scalar_one_or_none()
+    if old:
+        old.status = PolicyStatus.EXPIRED
+        old.end_date = now
+        await db.flush()
 
     pincode = pincode_override or worker.pincode
     premium_data = calculate_premium(tier=tier, pincode=pincode)
