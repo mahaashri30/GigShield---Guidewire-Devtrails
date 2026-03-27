@@ -94,7 +94,7 @@ async def trigger_claim(
         raise HTTPException(status_code=400, detail="Weekly payout cap reached for this policy")
 
     # Daily cap remaining
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
     today_result = await db.execute(
         select(func.coalesce(func.sum(Claim.approved_amount), 0.0)).where(
             Claim.worker_id == current_worker.id,
@@ -138,7 +138,7 @@ async def trigger_claim(
         claim.approved_amount = round(approved, 2)
         claim.processed_at = now
         policy.total_claimed = round(weekly_claimed + approved, 2)
-        policy.claims_count += 1
+        policy.claims_count = (policy.claims_count or 0) + 1
 
     elif fraud_result["auto_reject"]:
         claim.status = ClaimStatus.REJECTED
