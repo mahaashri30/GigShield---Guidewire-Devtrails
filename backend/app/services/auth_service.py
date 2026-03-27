@@ -34,28 +34,25 @@ def create_refresh_token(data: dict):
 
 
 async def send_otp_sms(phone: str, otp: str) -> bool:
-    """Send OTP via Fast2SMS. Falls back silently if key not configured."""
+    """Send OTP via 2Factor.in (free tier: 10k OTPs/month)."""
     if not settings.FAST2SMS_API_KEY or settings.FAST2SMS_API_KEY == "mock_key":
-        print(f"[OTP] {phone} → {otp} (Fast2SMS not configured, printed only)")
+        print(f"[OTP] {phone} → {otp} (SMS not configured)")
         return True
+    number = phone.strip().lstrip("+")
+    if number.startswith("91") and len(number) == 12:
+        number = number[2:]
+    number = number[-10:]
     try:
         async with httpx.AsyncClient() as client:
-            r = await client.post(
-                "https://www.fast2sms.com/dev/bulkV2",
-                headers={"authorization": settings.FAST2SMS_API_KEY},
-                json={
-                    "route": "otp",
-                    "variables_values": otp,
-                    "flash": 0,
-                    "numbers": phone.lstrip("+").lstrip("91") if phone.startswith(("91", "+91")) else phone,
-                },
+            r = await client.get(
+                f"https://2factor.in/API/V1/{settings.FAST2SMS_API_KEY}/SMS/{number}/{otp}/GigShield",
                 timeout=10.0,
             )
             data = r.json()
-            print(f"[Fast2SMS] {phone} → {data}")
-            return data.get("return") is True
+            print(f"[2Factor] {number} → {data}")
+            return data.get("Status") == "Success"
     except Exception as e:
-        print(f"[Fast2SMS ERROR] {e}")
+        print(f"[2Factor ERROR] {e}")
         return False
 
 
