@@ -70,6 +70,9 @@ async def trigger_claim(
     claims_this_week = count_result.scalar() or 0
 
     # Fraud detection
+    event_started_at = event.started_at
+    if event_started_at.tzinfo is None:
+        event_started_at = event_started_at.replace(tzinfo=timezone.utc)
     fraud_result = calculate_fraud_score(
         worker_city=current_worker.city,
         event_city=event.city,
@@ -78,7 +81,7 @@ async def trigger_claim(
         was_platform_active=True,
         claims_this_week=claims_this_week,
         claims_same_event=0,
-        event_started_at=event.started_at,
+        event_started_at=event_started_at,
         claim_created_at=now,
     )
 
