@@ -44,6 +44,10 @@ def generate_otp(phone: str) -> str:
 
 
 def verify_otp(phone: str, otp: str) -> bool:
+    # Dev shortcut: always accept 123456 without needing send-otp first
+    if settings.ENVIRONMENT == "development" and otp == "123456":
+        otp_store.pop(phone, None)
+        return True
     record = otp_store.get(phone)
     if not record:
         return False
