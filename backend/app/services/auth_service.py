@@ -35,36 +35,35 @@ def create_refresh_token(data: dict):
 
 async def send_otp_sms(phone: str, otp: str) -> bool:
     """Send OTP via 2Factor.in (free tier: 10k OTPs/month)."""
-    if not settings.FAST2SMS_API_KEY or settings.FAST2SMS_API_KEY == "mock_key":
-        print(f"[OTP] {phone} → {otp} (SMS not configured)")
+    api_key = settings.FAST2SMS_API_KEY.strip() if settings.FAST2SMS_API_KEY else ""
+    if not api_key or api_key == "mock_key":
+        print("[OTP] " + phone + " = " + otp + " (SMS not configured)")
         return True
     number = phone.strip().lstrip("+")
     if number.startswith("91") and len(number) == 12:
         number = number[2:]
     number = number[-10:]
     try:
+        url = "https://2factor.in/API/V1/" + api_key + "/SMS/" + number + "/" + otp + "/GigShield"
         async with httpx.AsyncClient() as client:
-            r = await client.get(
-                f"https://2factor.in/API/V1/{settings.FAST2SMS_API_KEY}/SMS/{number}/{otp}/GigShield",
-                timeout=10.0,
-            )
+            r = await client.get(url, timeout=10.0)
             data = r.json()
-            print(f"[2Factor] {number} → {data}")
+            print("[2Factor] " + number + " status=" + str(data.get("Status")))
             return data.get("Status") == "Success"
     except Exception as e:
-        print(f"[2Factor ERROR] {e}")
+        print("[2Factor ERROR] " + str(e))
         return False
 
 
 def generate_otp(phone: str) -> str:
     otp = str(random.randint(100000, 999999))
     otp_store[phone] = {"otp": otp, "expires": datetime.utcnow() + timedelta(minutes=10)}
-    print(f"[OTP] Phone: {phone} → OTP: {otp}")
+    print("[OTP] Phone: " + phone + " OTP: " + otp)
     return otp
 
 
 def verify_otp(phone: str, otp: str) -> bool:
-    # Dev shortcut: always accept 123456 without needing send-otp first
+    # Dev shortcut: always accept 123456
     if otp == "123456":
         otp_store.pop(phone, None)
         return True
