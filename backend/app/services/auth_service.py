@@ -1,3 +1,5 @@
+import random
+import httpx
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
@@ -31,15 +33,36 @@ def create_refresh_token(data: dict):
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
+async def send_otp_sms(phone: str, otp: str) -> bool:
+    """Send OTP via Fast2SMS. Falls back silently if key not configured."""
+    if not settings.FAST2SMS_API_KEY or settings.FAST2SMS_API_KEY == "mock_key":
+        print(f"[OTP] {phone} → {otp} (Fast2SMS not configured, printed only)")
+        return True
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.post(
+                "https://www.fast2sms.com/dev/bulkV2",
+                headers={"authorization": settings.FAST2SMS_API_KEY},
+                json={
+                    "route": "otp",
+                    "variables_values": otp,
+                    "flash": 0,
+                    "numbers": phone.lstrip("+").lstrip("91") if phone.startswith(("91", "+91")) else phone,
+                },
+                timeout=10.0,
+            )
+            data = r.json()
+            print(f"[Fast2SMS] {phone} → {data}")
+            return data.get("return") is True
+    except Exception as e:
+        print(f"[Fast2SMS ERROR] {e}")
+        return False
+
+
 def generate_otp(phone: str) -> str:
-    import random
-    # In development, always use 123456
-    if settings.ENVIRONMENT == "development":
-        otp = "123456"
-    else:
-        otp = str(random.randint(100000, 999999))
+    otp = str(random.randint(100000, 999999))
     otp_store[phone] = {"otp": otp, "expires": datetime.utcnow() + timedelta(minutes=10)}
-    print(f"[DEV OTP] Phone: {phone} → OTP: {otp}")
+    print(f"[OTP] Phone: {phone} → OTP: {otp}")
     return otp
 
 

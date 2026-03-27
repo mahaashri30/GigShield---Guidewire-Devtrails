@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.models.models import Worker
 from app.schemas.schemas import OTPRequest, OTPVerify, TokenResponse
-from app.services.auth_service import generate_otp, verify_otp, create_access_token, create_refresh_token
+from app.services.auth_service import generate_otp, send_otp_sms, verify_otp, create_access_token, create_refresh_token
 from app.config import settings
 
 router = APIRouter()
@@ -19,11 +19,8 @@ class RefreshRequest(BaseModel):
 @router.post("/send-otp")
 async def send_otp(payload: OTPRequest):
     otp = generate_otp(payload.phone)
-    return {
-        "message": "OTP sent successfully",
-        "phone": payload.phone,
-        "dev_otp": otp if True else None,
-    }
+    await send_otp_sms(payload.phone, otp)
+    return {"message": "OTP sent successfully", "phone": payload.phone}
 
 
 @router.post("/verify-otp", response_model=TokenResponse)
