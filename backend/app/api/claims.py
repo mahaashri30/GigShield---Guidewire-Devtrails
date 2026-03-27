@@ -132,7 +132,8 @@ async def trigger_claim(
     )
 
     if fraud_result["auto_approve"]:
-        approved = min(payout_data["income_shortfall"], effective_cap)
+        income_shortfall = payout_data.get("income_shortfall") or payout_data.get("approved_amount") or payout_data.get("raw_payout") or 0.0
+        approved = min(income_shortfall, effective_cap)
         claim.status = ClaimStatus.APPROVED
         claim.approved_amount = round(approved, 2)
         claim.processed_at = now
