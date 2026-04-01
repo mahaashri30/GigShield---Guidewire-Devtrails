@@ -210,6 +210,47 @@ async def fetch_aqi_mock(city: str) -> dict:
     return {"aqi": aqi_map.get(city, 80), "city": city}
 
 
+async def fetch_civic_real(city: str) -> Optional[tuple]:
+    """Real civic emergency detection via NewsAPI — scans for bandh/curfew/strike news."""
+    if settings.NEWSAPI_KEY == "mock_key":
+        return fetch_civic_mock(city)
+    keywords = f"({city} bandh) OR ({city} curfew) OR ({city} strike) OR ({city} Section 144) OR ({city} shutdown)"
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(
+                "https://newsapi.org/v2/everything",
+                params={
+                    "q": keywords,
+                    "language": "en",
+                    "pageSize": 5,
+                    "sortBy": "publishedAt",
+                    "apiKey": settings.NEWSAPI_KEY,
+                },
+                timeout=8.0,
+            )
+            data = r.json()
+            articles = data.get("articles", [])
+            if not articles:
+                return None
+            # Classify severity based on keywords in title
+            title = (articles[0].get("title") or "").lower()
+            desc = (articles[0].get("description") or "").lower()
+            combined = title + " " + desc
+            if any(w in combined for w in ["curfew", "section 144", "shutdown", "complete bandh"]):
+                severity = DisruptionSeverity.SEVERE
+                civic_type = "curfew"
+            elif any(w in combined for w in ["bandh", "strike", "protest", "blockade"]):
+                severity = DisruptionSeverity.MODERATE
+                civic_type = "strike"
+            else:
+                return None
+            description = articles[0].get("title", "Civic disruption detected")[:120]
+            return severity, description, civic_type
+    except Exception as e:
+        print("[NewsAPI ERROR] " + str(e))
+        return fetch_civic_mock(city)
+
+
 def fetch_civic_mock(city: str) -> Optional[tuple]:
     return random.choice(CIVIC_SCENARIOS.get(city, [None, None, None]))
 
@@ -327,7 +368,8 @@ async def check_disruptions(city: str, pincode: str) -> list:
             "source": "Traffic Monitor (Mock)",
         })
 
-    civic_result = fetch_civic_mock(city)
+    # 5. Civic emergency — real NewsAPI detection
+    civic_result = await fetch_civic_real(city)
     if civic_result:
         severity, desc, civic_type = civic_result
         events.append({
