@@ -34,9 +34,7 @@ async def simulate_disruption(
     db: AsyncSession = Depends(get_db),
     current_worker: Worker = Depends(get_current_worker),
 ):
-    if settings.ENVIRONMENT != "development":
-        from fastapi import HTTPException
-        raise HTTPException(status_code=403, detail="Simulation only available in development mode")
+    """Simulate disruptions — available in dev mode and for demo purposes."""
     events_data = await check_disruptions(city=city, pincode=pincode)
     events = []
 
