@@ -31,8 +31,10 @@ async def register_worker(
         platform=payload.platform.value,
     )
     current_worker.avg_daily_earnings = earnings_data["avg_daily_earnings"]
+    current_worker.active_days_30 = earnings_data.get("active_days_30", 0)
 
-    current_worker.is_verified = True
+    # Underwriting rule: minimum 7 active delivery days before cover eligibility
+    current_worker.is_verified = current_worker.active_days_30 >= 7
     await db.commit()
     await db.refresh(current_worker)
     return current_worker

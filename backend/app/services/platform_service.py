@@ -94,8 +94,9 @@ async def fetch_platform_earnings(phone: str, platform: str) -> dict:
     avg_daily = round(rng.uniform(low, high), 2)
 
     day_low, day_high = config["active_days"]
-    active_days = rng.randint(day_low, day_high)
-    weekly_settlement = round(avg_daily * active_days, 2)
+    active_days_week = rng.randint(day_low, day_high)
+    active_days_30 = rng.randint(active_days_week * 3, active_days_week * 4)
+    weekly_settlement = round(avg_daily * active_days_week, 2)
 
     return {
         "platform": platform,
@@ -103,7 +104,8 @@ async def fetch_platform_earnings(phone: str, platform: str) -> dict:
         "phone": phone,
         "avg_daily_earnings": avg_daily,
         "weekly_settlement": weekly_settlement,
-        "active_days_last_week": active_days,
+        "active_days_last_week": active_days_week,
+        "active_days_30": active_days_30,
         "source": f"{config['label']} Partner API (mock)",
         "verified": True,
     }

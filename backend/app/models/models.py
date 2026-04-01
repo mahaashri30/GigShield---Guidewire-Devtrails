@@ -81,6 +81,7 @@ class Worker(Base):
     is_verified = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     avg_daily_earnings = Column(Float, default=600.0)
+    active_days_30 = Column(Integer, default=0)   # active delivery days in last 30 days
     risk_score = Column(Float, default=0.5)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
