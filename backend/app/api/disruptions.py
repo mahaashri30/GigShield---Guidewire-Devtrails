@@ -7,6 +7,7 @@ from app.models.models import DisruptionEvent, Worker
 from app.schemas.schemas import DisruptionEventResponse
 from app.services.auth_service import get_current_worker
 from app.services.disruption_service import check_disruptions
+from app.config import settings
 
 router = APIRouter()
 
@@ -33,10 +34,9 @@ async def simulate_disruption(
     db: AsyncSession = Depends(get_db),
     current_worker: Worker = Depends(get_current_worker),
 ):
-    """
-    Simulate checking disruptions for a city (triggers mock API calls).
-    Used for demo purposes in Phase 1.
-    """
+    if settings.ENVIRONMENT != "development":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Simulation only available in development mode")
     events_data = await check_disruptions(city=city, pincode=pincode)
     events = []
 
