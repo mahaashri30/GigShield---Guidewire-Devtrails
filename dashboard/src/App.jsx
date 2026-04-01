@@ -4,7 +4,7 @@ import {
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from 'recharts'
 
-const API = 'http://localhost:8000/api/v1'
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 

@@ -61,6 +61,7 @@ class PayoutStatus(str, enum.Enum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    ROLLED_BACK = "rolled_back"  # rollback if transfer fails mid-way
 
 
 class Worker(Base):
@@ -81,7 +82,7 @@ class Worker(Base):
     is_verified = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     avg_daily_earnings = Column(Float, default=600.0)
-    active_days_30 = Column(Integer, default=0)   # active delivery days in last 30 days
+    active_days_30 = Column(Integer, default=0, nullable=True)  # active delivery days in last 30 days
     risk_score = Column(Float, default=0.5)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -173,5 +174,9 @@ class Payout(Base):
     initiated_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
     failure_reason = Column(Text, nullable=True)
+    channel = Column(String(20), default="UPI", nullable=True)
+    settlement_seconds = Column(Integer, nullable=True)
+    rollback_at = Column(DateTime(timezone=True), nullable=True)
+    reconciled = Column(Boolean, default=False, nullable=True)
 
     claim = relationship("Claim", back_populates="payout")

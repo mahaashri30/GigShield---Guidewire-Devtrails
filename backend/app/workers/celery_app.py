@@ -13,12 +13,12 @@ celery_app = Celery(
 )
 
 celery_app.conf.beat_schedule = {
-    # Poll weather every 15 minutes
+    # Poll weather + all 5 disruption triggers every 15 minutes
     "poll-weather": {
         "task": "app.workers.tasks.poll_weather_all_cities",
         "schedule": 900.0,  # 15 min
     },
-    # Poll AQI every 60 minutes
+    # Poll AQI every 60 minutes (dedicated pass)
     "poll-aqi": {
         "task": "app.workers.tasks.poll_aqi_all_cities",
         "schedule": 3600.0,

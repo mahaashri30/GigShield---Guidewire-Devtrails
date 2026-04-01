@@ -2,19 +2,32 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+from sqlalchemy import text
 import traceback
 
-from app.api import auth, workers, policies, claims, payouts, disruptions
+from app.api import auth, workers, policies, claims, payouts, disruptions, actuarial
 from app.database import engine, Base
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    # Startup — create tables and add any missing columns
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Add new columns if they don't exist (safe migration)
+        new_columns = [
+            "ALTER TABLE workers ADD COLUMN IF NOT EXISTS active_days_30 INTEGER DEFAULT 0",
+            "ALTER TABLE payouts ADD COLUMN IF NOT EXISTS channel VARCHAR(20) DEFAULT 'UPI'",
+            "ALTER TABLE payouts ADD COLUMN IF NOT EXISTS settlement_seconds INTEGER",
+            "ALTER TABLE payouts ADD COLUMN IF NOT EXISTS rollback_at TIMESTAMPTZ",
+            "ALTER TABLE payouts ADD COLUMN IF NOT EXISTS reconciled BOOLEAN DEFAULT FALSE",
+        ]
+        for sql in new_columns:
+            try:
+                await conn.execute(text(sql))
+            except Exception:
+                pass
     yield
-    # Shutdown
     await engine.dispose()
 
 
@@ -45,6 +58,7 @@ app.include_router(policies.router, prefix="/api/v1/policies", tags=["Policies"]
 app.include_router(claims.router, prefix="/api/v1/claims", tags=["Claims"])
 app.include_router(payouts.router, prefix="/api/v1/payouts", tags=["Payouts"])
 app.include_router(disruptions.router, prefix="/api/v1/disruptions", tags=["Disruptions"])
+app.include_router(actuarial.router, prefix="/api/v1/actuarial", tags=["Actuarial"])
 
 
 @app.get("/")

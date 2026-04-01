@@ -44,6 +44,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoggedIn: loggedIn);
   }
 
+  Future<void> forceLogout() async {
+    await _api.logout();
+    state = const AuthState();
+  }
+
   Future<Map<String, dynamic>> sendOtp(String phone) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
@@ -102,7 +107,14 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>(
 
 final dashboardProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
   final api = ref.watch(apiServiceProvider);
-  return api.getDashboard();
+  try {
+    return await api.getDashboard();
+  } on Exception catch (e) {
+    if (e.toString().contains('401') || e.toString().contains('deleteAll')) {
+      ref.read(authProvider.notifier).forceLogout();
+    }
+    rethrow;
+  }
 });
 
 final activePolicyProvider = FutureProvider.autoDispose<Map<String, dynamic>?>((ref) async {
@@ -139,6 +151,9 @@ final premiumQuoteProvider = FutureProvider.autoDispose.family<Map<String, dynam
     return api.getPremiumQuote(tier);
   },
 );
+
+// ── Dev mode (unlocked by using OTP 123456) ──────────────────────────────────
+final devModeProvider = StateProvider<bool>((ref) => false);
 
 // ── Selected tier for policy purchase ─────────────────────────────────────────
 

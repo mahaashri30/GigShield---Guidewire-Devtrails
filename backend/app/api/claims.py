@@ -201,25 +201,41 @@ async def trigger_claim(
 
     # Auto-payout if approved and amount > 0
     if claim.status == ClaimStatus.APPROVED and (claim.approved_amount or 0) > 0:
-        upi_id = current_worker.upi_id or f"worker_{current_worker.id[:8]}@upi"
+        upi_id = current_worker.upi_id or "worker_" + current_worker.id[:8] + "@upi"
         payout_result = await initiate_upi_payout(
             worker_id=current_worker.id,
             upi_id=upi_id,
             amount=claim.approved_amount,
             claim_id=claim.id,
+            phone=current_worker.phone,
+            disruption_type=event.disruption_type.value,
+            bank_account=current_worker.bank_account or "",
+            bank_ifsc=current_worker.bank_ifsc or "",
+            trigger_time=event_started_at,
         )
+        channel = payout_result.get("channel", "UPI")
+        settlement_secs = payout_result.get("settlement_seconds", 0)
         payout = Payout(
             claim_id=claim.id,
             worker_id=current_worker.id,
             amount=claim.approved_amount,
             upi_id=upi_id,
-            status=PayoutStatus.COMPLETED if payout_result["success"] else PayoutStatus.FAILED,
+            status=PayoutStatus.COMPLETED if payout_result["success"] else (
+                PayoutStatus.ROLLED_BACK if payout_result.get("rollback") else PayoutStatus.FAILED
+            ),
             razorpay_payout_id=payout_result.get("payout_id"),
             transaction_ref=payout_result.get("transaction_ref"),
             completed_at=now if payout_result["success"] else None,
+            channel=channel,
+            settlement_seconds=settlement_secs,
+            reconciled=payout_result["success"],
         )
         if payout_result["success"]:
             claim.status = ClaimStatus.PAID
+        elif payout_result.get("rollback"):
+            # Rollback: revert policy total_claimed so worker can retry
+            policy.total_claimed = round(max(0.0, float(policy.total_claimed or 0) - (claim.approved_amount or 0)), 2)
+            policy.claims_count = max(0, (policy.claims_count or 1) - 1)
         db.add(payout)
         await db.commit()
         await db.refresh(claim)

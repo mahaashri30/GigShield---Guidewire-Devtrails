@@ -44,6 +44,10 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
 
   void _verify(String otp) async {
     if (otp.length != 6) return;
+    // Set dev mode if using 123456
+    if (otp == '123456') {
+      ref.read(devModeProvider.notifier).state = true;
+    }
     final isNew = await ref.read(authProvider.notifier).verifyOtp(widget.phone, otp);
     if (!mounted) return;
     if (ref.read(authProvider).error != null) {
@@ -92,16 +96,25 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                   ],
                 ),
               ),
+              const SizedBox(height: 12),
               Container(
-                margin: const EdgeInsets.symmetric(vertical: 8),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: AppTheme.primaryLight,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppTheme.primary.withOpacity(0.3)),
                 ),
-                child: const Text(
-                  '🧪 Dev mode: OTP is 123456',
-                  style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w500, fontSize: 13),
+                child: const Row(
+                  children: [
+                    Icon(Icons.call_rounded, size: 18, color: AppTheme.primary),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'You may receive a call from +91 8031492487 with your OTP. Do not share it with anyone.',
+                        style: TextStyle(fontSize: 12, color: AppTheme.primary, height: 1.5),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 32),

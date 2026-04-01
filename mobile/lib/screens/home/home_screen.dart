@@ -56,11 +56,12 @@ class HomeScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 20),
 
-                    // Active disruptions
+                    // Active disruptions — deduplicated by type
                     if (disruptions.isNotEmpty) ...[
                       const Text('⚠️ Active Disruptions', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                       const SizedBox(height: 10),
-                      ...disruptions.map((d) => _DisruptionTile(data: d as Map<String, dynamic>, policyId: policy?['id'])),
+                      ...{ for (var d in disruptions) (d as Map<String, dynamic>)['disruption_type']: d }.values
+                          .map((d) => _DisruptionTile(data: d as Map<String, dynamic>, policyId: policy?['id'])),
                       const SizedBox(height: 20),
                     ],
 
@@ -81,13 +82,15 @@ class HomeScreen extends ConsumerWidget {
                           color: AppTheme.primary,
                           onTap: () => context.go('/policy/buy'),
                         )),
-                        const SizedBox(width: 12),
-                        Expanded(child: _QuickAction(
-                          icon: Icons.cloud_rounded,
-                          label: 'Simulate Event',
-                          color: AppTheme.warning,
-                          onTap: () => _simulate(context, ref, worker['city'] ?? 'Bangalore', worker['pincode'] ?? '560001'),
-                        )),
+                        if (ref.watch(devModeProvider)) ...[
+                          const SizedBox(width: 12),
+                          Expanded(child: _QuickAction(
+                            icon: Icons.cloud_rounded,
+                            label: 'Simulate Event',
+                            color: AppTheme.warning,
+                            onTap: () => _simulate(context, ref, worker['city'] ?? 'Bangalore', worker['pincode'] ?? '560001'),
+                          )),
+                        ],
                       ],
                     ),
 
@@ -135,9 +138,8 @@ class HomeScreen extends ConsumerWidget {
             backgroundColor: AppTheme.success,
           ));
         } catch (claimErr) {
-          // Disruption created but claim failed (e.g. no active policy)
           messenger.showSnackBar(SnackBar(
-            content: Text('Disruption detected but no active policy to claim against.'),
+            content: Text('Disruption detected! Tap Claim → to file your claim.'),
             backgroundColor: AppTheme.warning,
           ));
         }

@@ -1,10 +1,22 @@
 """
 AI-Powered Dynamic Premium Calculation Engine
-Uses rule-based logic + ML features for Phase 1 (minimal scope)
-Full XGBoost model training in Phase 2
+Phase 2: XGBoost model inference with rule-based fallback.
 """
+from __future__ import annotations
 from datetime import datetime
+import os
+import joblib
+import numpy as np
 from app.models.models import PolicyTier
+
+# Load XGBoost model if available (trained via ml/premium_engine/train.py)
+_MODEL_PATH = os.path.join(os.path.dirname(__file__), "../../ml/premium_engine/model.joblib")
+try:
+    _ml_model = joblib.load(_MODEL_PATH)
+except Exception:
+    _ml_model = None
+
+_TIER_IDX = {PolicyTier.BASIC: 0, PolicyTier.SMART: 1, PolicyTier.PRO: 2}
 
 # Base premiums per tier (₹/week)
 BASE_PREMIUMS = {
@@ -65,6 +77,34 @@ def get_season_factor() -> float:
     return SEASON_FACTORS.get(datetime.now().month, 1.0)
 
 
+def _ml_predict_premium(
+    tier: PolicyTier,
+    pincode: str,
+    worker_history_factor: float,
+    platform_activity_score: float,
+) -> float | None:
+    """Use XGBoost model if available; return None to fall back to rule-based."""
+    if _ml_model is None:
+        return None
+    try:
+        prefix = int(pincode[:1]) if pincode else 0
+        month = datetime.now().month
+        tier_idx = _TIER_IDX[tier]
+        tenure_weeks = 0  # unknown at quote time; use 0 (conservative)
+        zone_risk = get_zone_risk(pincode)
+        season = get_season_factor()
+        # Use moderate rain (0) as default disruption context for premium quoting
+        features = np.array([[prefix, month, tier_idx, tenure_weeks,
+                               platform_activity_score, zone_risk, season,
+                               0, 0, 0.3, 0]])
+        pred = float(_ml_model.predict(features)[0])
+        base = BASE_PREMIUMS[tier]
+        # Clamp to ±40% of base to prevent wild extrapolation
+        return round(max(base * 0.6, min(base * 1.6, pred * worker_history_factor)), 2)
+    except Exception:
+        return None
+
+
 def calculate_premium(
     tier: PolicyTier,
     pincode: str,
@@ -72,17 +112,20 @@ def calculate_premium(
     platform_activity_score: float = 1.0,
 ) -> dict:
     """
-    Calculate dynamic weekly premium using risk factors.
-    
-    Formula:
-    Premium = Base × Zone_Risk × Season_Factor × Worker_History × Platform_Activity
+    Calculate dynamic weekly premium.
+    Uses XGBoost ML model when available, falls back to rule-based formula.
+    Formula (fallback): Premium = Base × Zone_Risk × Season_Factor × Worker_History × Platform_Activity
     """
     base = BASE_PREMIUMS[tier]
     zone_risk = get_zone_risk(pincode)
     season = get_season_factor()
 
-    adjusted = base * zone_risk * season * worker_history_factor * platform_activity_score
-    adjusted = round(adjusted, 2)
+    ml_premium = _ml_predict_premium(tier, pincode, worker_history_factor, platform_activity_score)
+    if ml_premium is not None:
+        adjusted = ml_premium
+    else:
+        adjusted = base * zone_risk * season * worker_history_factor * platform_activity_score
+        adjusted = round(adjusted, 2)
 
     return {
         "tier": tier,
@@ -108,26 +151,37 @@ def calculate_payout(
     dss_multiplier: float,
     active_hours_ratio: float,
     tier: PolicyTier,
-    existing_claims_today: float = 0.0,
+    existing_claimed_today: float = 0.0,
 ) -> dict:
     """
-    Calculate payout for a triggered claim.
-    
+    Payout = income the worker LOST due to the disruption.
+
     Formula:
-    Payout = Worker_Daily_Avg × DSS × Active_Hours_Ratio
-    Capped at tier max daily payout
+    - Expected earnings for the day  = worker_daily_avg
+    - Estimated actual earnings      = worker_daily_avg × (1 - DSS) × active_hours_ratio
+    - Income shortfall (= payout)    = worker_daily_avg - estimated_actual
+                                     = worker_daily_avg × DSS × active_hours_ratio
+
+    Capped at (tier daily cap - already claimed today) to prevent over-compensation.
     """
-    raw_payout = worker_daily_avg * dss_multiplier * active_hours_ratio
-    cap = MAX_DAILY_PAYOUT[tier]
-    remaining_cap = max(0, cap - existing_claims_today)
-    final_payout = round(min(raw_payout, remaining_cap), 2)
+    expected          = worker_daily_avg
+    estimated_actual  = round(worker_daily_avg * (1 - dss_multiplier) * active_hours_ratio, 2)
+    income_shortfall  = round(expected - estimated_actual, 2)
+
+    daily_cap         = MAX_DAILY_PAYOUT[tier]
+    remaining_cap     = max(0.0, daily_cap - existing_claimed_today)
+    approved_amount   = round(min(income_shortfall, remaining_cap), 2)
 
     return {
-        "worker_daily_avg": worker_daily_avg,
-        "dss_multiplier": dss_multiplier,
+        "worker_daily_avg":   worker_daily_avg,
+        "dss_multiplier":     dss_multiplier,
         "active_hours_ratio": active_hours_ratio,
-        "raw_payout": round(raw_payout, 2),
-        "tier_cap": cap,
-        "approved_amount": final_payout,
-        "capped": raw_payout > cap,
+        "expected_earnings":  expected,
+        "estimated_actual":   estimated_actual,
+        "income_shortfall":   income_shortfall,
+        "raw_payout":         income_shortfall,
+        "tier_cap":           daily_cap,
+        "remaining_cap":      remaining_cap,
+        "approved_amount":    approved_amount,
+        "capped":             income_shortfall > remaining_cap,
     }

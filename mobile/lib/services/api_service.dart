@@ -9,8 +9,8 @@ class ApiService {
   ApiService() {
     _dio = Dio(BaseOptions(
       baseUrl: AppConstants.baseUrl,
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 15),
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 60),
       headers: {'Content-Type': 'application/json'},
     ));
 
@@ -38,6 +38,12 @@ class ApiService {
           }
           // Refresh failed — clear storage so app redirects to login
           await _storage.deleteAll();
+          return handler.next(DioException(
+            requestOptions: e.requestOptions,
+            response: e.response,
+            type: DioExceptionType.badResponse,
+            error: 'Session expired. Please login again.',
+          ));
         }
         return handler.next(e);
       },
@@ -65,7 +71,9 @@ class ApiService {
   // ── Auth ──────────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> sendOtp(String phone) async {
-    final res = await _dio.post('/auth/send-otp', data: {'phone': phone});
+    final res = await _dio.post('/auth/send-otp',
+        data: {'phone': phone},
+        options: Options(sendTimeout: const Duration(seconds: 60), receiveTimeout: const Duration(seconds: 60)));
     return res.data;
   }
 
