@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from sqlalchemy import text
 import traceback
 
-from app.api import auth, workers, policies, claims, payouts, disruptions, actuarial
+from app.api import auth, workers, policies, claims, payouts, disruptions, actuarial, admin
 from app.database import engine, Base
 
 
@@ -59,6 +59,7 @@ app.include_router(claims.router, prefix="/api/v1/claims", tags=["Claims"])
 app.include_router(payouts.router, prefix="/api/v1/payouts", tags=["Payouts"])
 app.include_router(disruptions.router, prefix="/api/v1/disruptions", tags=["Disruptions"])
 app.include_router(actuarial.router, prefix="/api/v1/actuarial", tags=["Actuarial"])
+app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
 
 
 @app.get("/")
