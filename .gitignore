@@ -9,6 +9,15 @@ venv/
 # Keep env example, ignore actual env
 backend/.env
 
+# ML models (large binary files)
+backend/ml/**/*.joblib
+backend/ml/**/*.pkl
+
+# Temp token files
+tok.json
+token.json
+*.json.bak
+
 # Docker
 *.log
 
@@ -36,3 +45,7 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Celery
+backend/celerybeat-schedule
+backend/celerybeat.pid
