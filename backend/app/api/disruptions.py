@@ -34,9 +34,26 @@ async def simulate_disruption(
     db: AsyncSession = Depends(get_db),
     current_worker: Worker = Depends(get_current_worker),
 ):
-    """Simulate disruptions — available in dev mode and for demo purposes."""
+    """Simulate disruptions — always creates at least one event for demo."""
+    from app.models.models import DisruptionType, DisruptionSeverity
+    from app.services.disruption_service import get_dss
+
     events_data = await check_disruptions(city=city, pincode=pincode)
+
+    # Guarantee at least one event for demo purposes
+    if not events_data:
+        events_data = [{
+            "disruption_type": DisruptionType.HEAVY_RAIN,
+            "severity": DisruptionSeverity.SEVERE,
+            "city": city,
+            "pincode": pincode,
+            "dss_multiplier": get_dss(DisruptionType.HEAVY_RAIN, DisruptionSeverity.SEVERE, city, pincode),
+            "raw_value": 70.0,
+            "description": "64.5mm/hr rainfall (Heavy) - Simulated",
+            "source": "OpenWeather API (Simulated)",
+        }]
     events = []
+    now_utc = datetime.utcnow()
 
     for e in events_data:
         event = DisruptionEvent(
@@ -48,7 +65,7 @@ async def simulate_disruption(
             raw_value=e.get("raw_value"),
             description=e.get("description"),
             source=e.get("source"),
-            started_at=datetime.utcnow(),
+            started_at=now_utc,
             is_active=True,
         )
         db.add(event)
