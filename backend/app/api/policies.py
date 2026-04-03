@@ -158,22 +158,24 @@ async def _activate_policy(tier, pincode_override, worker: Worker, db: AsyncSess
     now = datetime.now(timezone.utc)
 
     # Actuarial gate: suspend new enrolments if loss ratio > 85%
-    claims_result = await db.execute(
-        select(func.coalesce(func.sum(Claim.approved_amount), 0.0)).where(
-            Claim.status.in_([ClaimStatus.APPROVED, ClaimStatus.PAID])
+    # Skipped in demo/mock mode to allow uninterrupted policy purchase
+    if not _is_mock():
+        claims_result = await db.execute(
+            select(func.coalesce(func.sum(Claim.approved_amount), 0.0)).where(
+                Claim.status.in_([ClaimStatus.APPROVED, ClaimStatus.PAID])
+            )
         )
-    )
-    total_claims = float(claims_result.scalar() or 0)
-    premium_result = await db.execute(
-        select(func.coalesce(func.sum(Policy.weekly_premium), 0.0))
-    )
-    total_premium = float(premium_result.scalar() or 1)
-    bcr_data = calculate_bcr(total_claims, total_premium)
-    if bcr_data["bcr"] > LOSS_RATIO_SUSPEND_THRESHOLD:
-        raise HTTPException(
-            status_code=503,
-            detail=f"New enrolments temporarily suspended. Loss ratio {bcr_data['bcr']:.0%} exceeds 85% threshold. Please try again later."
+        total_claims = float(claims_result.scalar() or 0)
+        premium_result = await db.execute(
+            select(func.coalesce(func.sum(Policy.weekly_premium), 0.0))
         )
+        total_premium = float(premium_result.scalar() or 1)
+        bcr_data = calculate_bcr(total_claims, total_premium)
+        if bcr_data["bcr"] > LOSS_RATIO_SUSPEND_THRESHOLD:
+            raise HTTPException(
+                status_code=503,
+                detail=f"New enrolments temporarily suspended. Loss ratio {bcr_data['bcr']:.0%} exceeds 85% threshold. Please try again later."
+            )
     existing = await db.execute(
         select(Policy).where(
             Policy.worker_id == worker.id,
