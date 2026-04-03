@@ -153,11 +153,8 @@ async def _activate_policy(tier, pincode_override, worker: Worker, db: AsyncSess
     """Expire any existing active policy, then create and return a new one."""
     from sqlalchemy import func
     from app.models.models import Claim, ClaimStatus
-    from app.services.actuarial_service import calculate_bcr, LOSS_RATIO_SUSPEND_THRESHOLD
 
     now = datetime.now(timezone.utc)
-
-    # Actuarial gate disabled for demo — loss ratio check runs in production only
     existing = await db.execute(
         select(Policy).where(
             Policy.worker_id == worker.id,
