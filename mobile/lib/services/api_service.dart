@@ -1,6 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:gigshield/utils/constants.dart';
+import 'package:susanoo/utils/constants.dart';
 
 class ApiService {
   late final Dio _dio;

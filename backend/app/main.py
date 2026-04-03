@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="GigShield API",
+    title="Susanoo API",
     description="AI-Powered Parametric Income Insurance for Delivery Partners",
     version="1.0.0",
     lifespan=lifespan,
@@ -66,7 +66,7 @@ app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
 @app.head("/")
 async def root():
     return {
-        "app": "GigShield",
+        "app": "Susanoo",
         "version": "1.0.0",
         "status": "running",
         "message": "AI-Powered Parametric Income Insurance for Delivery Partners",

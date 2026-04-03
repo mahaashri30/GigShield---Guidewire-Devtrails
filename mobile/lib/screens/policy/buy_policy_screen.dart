@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
-import 'package:gigshield/theme/app_theme.dart';
-import 'package:gigshield/providers/app_providers.dart';
-import 'package:gigshield/utils/constants.dart';
+import 'package:susanoo/theme/app_theme.dart';
+import 'package:susanoo/providers/app_providers.dart';
+import 'package:susanoo/utils/constants.dart';
 
 class BuyPolicyScreen extends ConsumerStatefulWidget {
   const BuyPolicyScreen({super.key});
@@ -46,7 +46,7 @@ class _BuyPolicyScreenState extends ConsumerState<BuyPolicyScreen> {
         'currency': 'INR',
         'name': 'GigShield',
         'description': '${AppConstants.tierLabels[tier] ?? tier} — Weekly Policy',
-        'prefill': {'contact': '', 'email': 'worker@gigshield.in'},
+        'prefill': {'contact': '', 'email': 'worker@susanoo.in'},
         'theme': {'color': '#1A56DB'},
         'modal': {'confirm_close': true},
       });

@@ -44,7 +44,7 @@ async def send_otp_sms(phone: str, otp: str) -> bool:
         number = number[2:]
     number = number[-10:]
     try:
-        url = "https://2factor.in/API/V1/" + api_key + "/SMS/" + number + "/" + otp + "/GigShield"
+        url = "https://2factor.in/API/V1/" + api_key + "/SMS/" + number + "/" + otp + "/Susanoo"
         async with httpx.AsyncClient() as client:
             r = await client.get(url, timeout=10.0)
             data = r.json()

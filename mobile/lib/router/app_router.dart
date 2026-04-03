@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:gigshield/providers/app_providers.dart';
-import 'package:gigshield/screens/splash_screen.dart';
-import 'package:gigshield/screens/onboarding/phone_screen.dart';
-import 'package:gigshield/screens/onboarding/otp_screen.dart';
-import 'package:gigshield/screens/onboarding/platform_screen.dart';
-import 'package:gigshield/screens/onboarding/register_screen.dart';
-import 'package:gigshield/screens/home/home_screen.dart';
-import 'package:gigshield/screens/policy/policy_screen.dart';
-import 'package:gigshield/screens/policy/buy_policy_screen.dart';
-import 'package:gigshield/screens/claims/claims_screen.dart';
-import 'package:gigshield/screens/profile/profile_screen.dart';
-import 'package:gigshield/screens/shell_screen.dart';
+import 'package:susanoo/providers/app_providers.dart';
+import 'package:susanoo/screens/splash_screen.dart';
+import 'package:susanoo/screens/onboarding/phone_screen.dart';
+import 'package:susanoo/screens/onboarding/otp_screen.dart';
+import 'package:susanoo/screens/onboarding/platform_screen.dart';
+import 'package:susanoo/screens/onboarding/register_screen.dart';
+import 'package:susanoo/screens/home/home_screen.dart';
+import 'package:susanoo/screens/policy/policy_screen.dart';
+import 'package:susanoo/screens/policy/buy_policy_screen.dart';
+import 'package:susanoo/screens/claims/claims_screen.dart';
+import 'package:susanoo/screens/profile/profile_screen.dart';
+import 'package:susanoo/screens/shell_screen.dart';
 
 // Bridges Riverpod state changes into a Listenable that GoRouter can watch
 class _AuthListenable extends ChangeNotifier {

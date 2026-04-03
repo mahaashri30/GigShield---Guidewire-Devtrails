@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:gigshield/theme/app_theme.dart';
+import 'package:susanoo/theme/app_theme.dart';
 
 class ShellScreen extends StatelessWidget {
   final Widget child;

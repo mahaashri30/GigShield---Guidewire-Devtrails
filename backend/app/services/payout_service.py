@@ -32,11 +32,11 @@ async def send_payout_sms(phone: str, amount: float, upi_id: str, transaction_re
         number = number[2:]
     number = number[-10:]
     message = (
-        "GigShield: Rs." + str(int(amount)) +
+        "Susanoo: Rs." + str(int(amount)) +
         " credited to " + upi_id +
         " for " + disruption.replace("_", " ") +
         " disruption. Ref:" + transaction_ref +
-        ". Income protected. -GigShield"
+        ". Income protected. -Susanoo"
     )
     try:
         url = "https://2factor.in/API/V1/" + api_key + "/SMS/" + number + "/AUTOGEN2/GigShield_Payout"

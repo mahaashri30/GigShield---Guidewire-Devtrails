@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:gigshield/theme/app_theme.dart';
-import 'package:gigshield/providers/app_providers.dart';
-import 'package:gigshield/utils/constants.dart';
+import 'package:susanoo/theme/app_theme.dart';
+import 'package:susanoo/providers/app_providers.dart';
+import 'package:susanoo/utils/constants.dart';
 
 class ClaimsScreen extends ConsumerWidget {
   const ClaimsScreen({super.key});

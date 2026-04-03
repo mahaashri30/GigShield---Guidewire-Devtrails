@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:gigshield/theme/app_theme.dart';
-import 'package:gigshield/providers/app_providers.dart';
+import 'package:susanoo/theme/app_theme.dart';
+import 'package:susanoo/providers/app_providers.dart';
 
 class PhoneScreen extends ConsumerStatefulWidget {
   const PhoneScreen({super.key});
@@ -62,7 +62,7 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
                 ),
                 const SizedBox(height: 32),
                 const Text(
-                  'Welcome to\nGigShield 👋',
+                  'Welcome to\nSusanoo 👋',
                   style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, height: 1.2),
                 ),
                 const SizedBox(height: 12),

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:gigshield/router/app_router.dart';
-import 'package:gigshield/theme/app_theme.dart';
+import 'package:susanoo/router/app_router.dart';
+import 'package:susanoo/theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

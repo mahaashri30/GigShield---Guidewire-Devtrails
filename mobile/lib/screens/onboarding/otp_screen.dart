@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pinput/pinput.dart';
-import 'package:gigshield/theme/app_theme.dart';
-import 'package:gigshield/providers/app_providers.dart';
+import 'package:susanoo/theme/app_theme.dart';
+import 'package:susanoo/providers/app_providers.dart';
 import 'dart:async';
 
 class OtpScreen extends ConsumerStatefulWidget {

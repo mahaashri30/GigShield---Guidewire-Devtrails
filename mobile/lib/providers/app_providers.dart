@@ -1,5 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:gigshield/services/api_service.dart';
+import 'package:susanoo/services/api_service.dart';
 
 // ── Core providers ────────────────────────────────────────────────────────────
 
