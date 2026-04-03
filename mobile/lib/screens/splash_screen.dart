@@ -67,7 +67,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                   ),
                   const SizedBox(height: 24),
                   const Text(
-                    'GigShield',
+                    'Susanoo',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 36,
@@ -77,7 +77,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Your income. Protected.',
+                    'The Ultimate Defense.',
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.8),
                       fontSize: 16,

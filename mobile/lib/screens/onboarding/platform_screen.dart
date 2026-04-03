@@ -202,7 +202,7 @@ class _PlatformScreenState extends ConsumerState<PlatformScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'If a disruption cuts your earnings, GigShield pays you ₹$avg × disruption severity directly to your UPI.',
+                        'If a disruption cuts your earnings, Susanoo pays you ₹$avg × disruption severity directly to your UPI.',
                         style: const TextStyle(fontSize: 12, color: AppTheme.primary),
                       ),
                     ),

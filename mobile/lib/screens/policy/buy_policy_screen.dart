@@ -44,7 +44,7 @@ class _BuyPolicyScreenState extends ConsumerState<BuyPolicyScreen> {
         'order_id': order['order_id'],
         'amount': order['amount'],
         'currency': 'INR',
-        'name': 'GigShield',
+        'name': 'Susanoo',
         'description': '${AppConstants.tierLabels[tier] ?? tier} — Weekly Policy',
         'prefill': {'contact': '', 'email': 'worker@susanoo.in'},
         'theme': {'color': '#1A56DB'},
