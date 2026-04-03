@@ -62,12 +62,12 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
                 ),
                 const SizedBox(height: 32),
                 const Text(
-                  'Welcome to\nSusanoo 👋',
+                  'Welcome to\nSusanoo 🛡️',
                   style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, height: 1.2),
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Income protection for delivery heroes.\nEnter your mobile number to get started.',
+                  '"The Ultimate Defense" for delivery heroes.\nEnter your mobile number to get started.',
                   style: TextStyle(fontSize: 16, color: AppTheme.textSecondary, height: 1.5),
                 ),
                 const SizedBox(height: 40),
