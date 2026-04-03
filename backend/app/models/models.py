@@ -205,25 +205,3 @@ class WorkerLocationPing(Base):
     worker = relationship("Worker", back_populates="location_pings")
 
 
-class WorkerLocationPing(Base):
-    """
-    Stores worker GPS pings every 10 minutes during active hours (6am-10pm IST).
-    Used for:
-    1. GPS spoof detection — sudden jumps >50km in <10min = impossible
-    2. Claim validation — worker must be in disruption city at event time
-    3. Zone verification — pincode prefix must match registered zone
-    """
-    __tablename__ = "worker_location_pings"
-
-    id = Column(String, primary_key=True, default=gen_uuid)
-    worker_id = Column(String, ForeignKey("workers.id"), nullable=False)
-    lat = Column(Float, nullable=False)
-    lng = Column(Float, nullable=False)
-    accuracy_meters = Column(Float, nullable=True)
-    city = Column(String(100), nullable=True)       # reverse-geocoded city
-    pincode = Column(String(10), nullable=True)     # reverse-geocoded pincode
-    is_spoofed = Column(Boolean, default=False)     # flagged by jump detection
-    distance_from_last_km = Column(Float, nullable=True)  # km from previous ping
-    pinged_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    worker = relationship("Worker", back_populates="location_pings")
