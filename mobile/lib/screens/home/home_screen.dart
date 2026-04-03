@@ -74,7 +74,10 @@ class HomeScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 10),
                       ...{ for (var d in disruptions) (d as Map<String, dynamic>)['disruption_type']: d }.values
-                          .map((d) => _DisruptionTile(data: d as Map<String, dynamic>, policyId: null)),
+                          .toList()
+                          .asMap()
+                          .entries
+                          .map((e) => _DisruptionTile(data: e.value as Map<String, dynamic>, policyId: null, index: e.key)),
                       const SizedBox(height: 20),
                     ],
 
@@ -141,7 +144,6 @@ class HomeScreen extends ConsumerWidget {
         return;
       }
 
-      // Auto-trigger a claim for the first event
       final eventId = events.first['id'] as String?;
       if (eventId != null) {
         try {
@@ -158,7 +160,11 @@ class HomeScreen extends ConsumerWidget {
         }
       }
 
-      ref.invalidate(dashboardProvider);`r`n      ref.invalidate(claimsProvider);`r`n      await Future.delayed(const Duration(seconds: 2));`r`n      ref.invalidate(dashboardProvider);`r`n      ref.invalidate(claimsProvider);
+      ref.invalidate(dashboardProvider);
+      ref.invalidate(claimsProvider);
+      await Future.delayed(const Duration(seconds: 2));
+      ref.invalidate(dashboardProvider);
+      ref.invalidate(claimsProvider);
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.danger));
     }
@@ -207,74 +213,108 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _ShieldCard extends StatelessWidget {
+// ── Shield Card with pulse glow when ACTIVE ───────────────────────────────────
+class _ShieldCard extends StatefulWidget {
   final Map<String, dynamic>? policy;
   final VoidCallback onTap;
   const _ShieldCard({this.policy, required this.onTap});
 
   @override
+  State<_ShieldCard> createState() => _ShieldCardState();
+}
+
+class _ShieldCardState extends State<_ShieldCard> with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))
+      ..repeat(reverse: true);
+    _pulse = Tween<double>(begin: 0.0, end: 10.0)
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final hasPolicy = policy != null;
-    final tier = policy?['tier'] as String? ?? '';
+    final hasPolicy = widget.policy != null;
+    final tier = widget.policy?['tier'] as String? ?? '';
     final tierLabel = AppConstants.tierLabels[tier] ?? 'No Policy';
-    final premium = (policy?['weekly_premium'] as num?)?.toStringAsFixed(0) ?? '0';
-    final endDate = policy?['end_date'] != null
-        ? DateFormat('dd MMM').format(DateTime.parse(policy!['end_date']))
+    final premium = (widget.policy?['weekly_premium'] as num?)?.toStringAsFixed(0) ?? '0';
+    final endDate = widget.policy?['end_date'] != null
+        ? DateFormat('dd MMM').format(DateTime.parse(widget.policy!['end_date']))
         : null;
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: hasPolicy
-                ? [const Color(0xFF1A56DB), const Color(0xFF0EA5E9)]
-                : [const Color(0xFF94A3B8), const Color(0xFF64748B)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (_, __) => GestureDetector(
+        onTap: widget.onTap,
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: hasPolicy
+                  ? [const Color(0xFF1A56DB), const Color(0xFF0EA5E9)]
+                  : [const Color(0xFF94A3B8), const Color(0xFF64748B)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: hasPolicy
+                ? [BoxShadow(
+                    color: const Color(0xFF1A56DB).withOpacity(0.25 + _pulse.value * 0.025),
+                    blurRadius: 12 + _pulse.value,
+                    spreadRadius: _pulse.value * 0.25,
+                  )]
+                : null,
           ),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.shield_rounded, color: Colors.white, size: 20),
-                      const SizedBox(width: 6),
-                      Text(
-                        hasPolicy ? tierLabel : 'No Active Policy',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16),
-                      ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.shield_rounded, color: Colors.white, size: 20),
+                        const SizedBox(width: 6),
+                        Text(
+                          hasPolicy ? tierLabel : 'No Active Policy',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (hasPolicy) ...[
+                      Text('₹$premium/week • Valid till $endDate',
+                          style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13)),
+                    ] else ...[
+                      Text('Tap to get protected now',
+                          style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13)),
                     ],
-                  ),
-                  const SizedBox(height: 8),
-                  if (hasPolicy) ...[
-                    Text('₹$premium/week • Valid till $endDate',
-                        style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13)),
-                  ] else ...[
-                    Text('Tap to get protected now',
-                        style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13)),
                   ],
-                ],
+                ),
               ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  hasPolicy ? 'ACTIVE' : 'BUY NOW',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12),
+                ),
               ),
-              child: Text(
-                hasPolicy ? 'ACTIVE' : 'BUY NOW',
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -310,56 +350,93 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _DisruptionTile extends ConsumerWidget {
+// ── Disruption Tile with slide-in from left ───────────────────────────────────
+class _DisruptionTile extends ConsumerStatefulWidget {
   final Map<String, dynamic> data;
   final String? policyId;
-  const _DisruptionTile({required this.data, this.policyId});
+  final int index;
+  const _DisruptionTile({required this.data, this.policyId, this.index = 0});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final type = data['disruption_type'] as String? ?? '';
-    final severity = data['severity'] as String? ?? 'moderate';
-    final dss = (data['dss_multiplier'] as num?)?.toDouble() ?? 0.3;
+  ConsumerState<_DisruptionTile> createState() => _DisruptionTileState();
+}
+
+class _DisruptionTileState extends ConsumerState<_DisruptionTile>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<Offset> _slide;
+  late Animation<double> _fade;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
+    _slide = Tween<Offset>(begin: const Offset(-0.4, 0), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
+    _fade = Tween<double>(begin: 0, end: 1)
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeIn));
+    Future.delayed(Duration(milliseconds: widget.index * 100), () {
+      if (mounted) _ctrl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final type = widget.data['disruption_type'] as String? ?? '';
+    final severity = widget.data['severity'] as String? ?? 'moderate';
+    final dss = (widget.data['dss_multiplier'] as num?)?.toDouble() ?? 0.3;
     final label = AppConstants.disruptionLabels[type] ?? type;
     final severityColor = Color(AppConstants.severityColors[severity] ?? 0xFFF59E0B);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: severityColor.withOpacity(0.3)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: severityColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(Icons.warning_rounded, color: severityColor, size: 20),
+    return FadeTransition(
+      opacity: _fade,
+      child: SlideTransition(
+        position: _slide,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: severityColor.withOpacity(0.3)),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                Text(
-                  '${severity.toUpperCase()} • DSS: ${(dss * 100).toInt()}%',
-                  style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: severityColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-              ],
-            ),
+                child: Icon(Icons.warning_rounded, color: severityColor, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                    Text(
+                      '${severity.toUpperCase()} • DSS: ${(dss * 100).toInt()}%',
+                      style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              if (widget.policyId != null)
+                TextButton(
+                  onPressed: () => _triggerClaim(context, ref, widget.data['id'] as String?),
+                  child: const Text('Claim →', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                ),
+            ],
           ),
-          if (policyId != null)
-            TextButton(
-              onPressed: () => _triggerClaim(context, ref, data['id'] as String?),
-              child: const Text('Claim →', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-            ),
-        ],
+        ),
       ),
     );
   }
@@ -369,7 +446,11 @@ class _DisruptionTile extends ConsumerWidget {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await ref.read(apiServiceProvider).triggerClaim(eventId);
-      ref.invalidate(dashboardProvider);`r`n      ref.invalidate(claimsProvider);`r`n      await Future.delayed(const Duration(seconds: 2));`r`n      ref.invalidate(dashboardProvider);`r`n      ref.invalidate(claimsProvider);
+      ref.invalidate(dashboardProvider);
+      ref.invalidate(claimsProvider);
+      await Future.delayed(const Duration(seconds: 2));
+      ref.invalidate(dashboardProvider);
+      ref.invalidate(claimsProvider);
       messenger.showSnackBar(const SnackBar(
         content: Text('Claim submitted! Check Claims tab.'),
         backgroundColor: Colors.green,
@@ -490,6 +571,3 @@ class _ClaimTile extends StatelessWidget {
     );
   }
 }
-
-
-
