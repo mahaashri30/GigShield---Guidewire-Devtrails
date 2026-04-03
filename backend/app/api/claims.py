@@ -121,7 +121,28 @@ async def trigger_claim(
     )
     claims_this_week = count_result.scalar() or 0
 
-    # Fraud detection
+    # Fraud detection — include GPS location data
+    from app.models.models import WorkerLocationPing
+    # Check for suspicious GPS pings in last 30 min
+    ping_cutoff = now - timedelta(minutes=30)
+    suspicious_result = await db.execute(
+        select(WorkerLocationPing).where(
+            WorkerLocationPing.worker_id == current_worker.id,
+            WorkerLocationPing.is_suspicious == True,
+            WorkerLocationPing.recorded_at >= ping_cutoff,
+        ).limit(1)
+    )
+    had_suspicious_ping = suspicious_result.scalar_one_or_none() is not None
+
+    # Get last known city from GPS
+    last_ping_result = await db.execute(
+        select(WorkerLocationPing).where(
+            WorkerLocationPing.worker_id == current_worker.id,
+        ).order_by(WorkerLocationPing.recorded_at.desc()).limit(1)
+    )
+    last_ping = last_ping_result.scalar_one_or_none()
+    last_known_city = last_ping.city_detected if last_ping else ""
+
     fraud_result = calculate_fraud_score(
         worker_city=current_worker.city,
         event_city=event.city,
@@ -132,6 +153,8 @@ async def trigger_claim(
         claims_same_event=0,
         event_started_at=event_started_at,
         claim_created_at=now,
+        last_known_city=last_known_city,
+        had_suspicious_ping=had_suspicious_ping,
     )
 
     # Weekly cap remaining = tier weekly cap - total already claimed this policy week

@@ -56,12 +56,25 @@ class HomeScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 20),
 
-                    // Active disruptions — deduplicated by type
+                    // Active Disruptions — deduplicated by type
                     if (disruptions.isNotEmpty) ...[
-                      const Text('⚠️ Active Disruptions', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                      Row(
+                        children: [
+                          const Text('⚠️ Active Disruptions', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: AppTheme.success.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text('Auto-claimed', style: TextStyle(fontSize: 11, color: AppTheme.success, fontWeight: FontWeight.w600)),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 10),
                       ...{ for (var d in disruptions) (d as Map<String, dynamic>)['disruption_type']: d }.values
-                          .map((d) => _DisruptionTile(data: d as Map<String, dynamic>, policyId: policy?['id'])),
+                          .map((d) => _DisruptionTile(data: d as Map<String, dynamic>, policyId: null)),
                       const SizedBox(height: 20),
                     ],
 
@@ -139,14 +152,13 @@ class HomeScreen extends ConsumerWidget {
           ));
         } catch (claimErr) {
           messenger.showSnackBar(SnackBar(
-            content: Text('Disruption detected! Tap Claim → to file your claim.'),
+            content: Text('Disruption detected! Claim is being auto-processed.'),
             backgroundColor: AppTheme.warning,
           ));
         }
       }
 
-      ref.invalidate(dashboardProvider);
-      ref.invalidate(claimsProvider);
+      ref.invalidate(dashboardProvider);`r`n      ref.invalidate(claimsProvider);`r`n      await Future.delayed(const Duration(seconds: 2));`r`n      ref.invalidate(dashboardProvider);`r`n      ref.invalidate(claimsProvider);
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.danger));
     }
@@ -357,8 +369,7 @@ class _DisruptionTile extends ConsumerWidget {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await ref.read(apiServiceProvider).triggerClaim(eventId);
-      ref.invalidate(dashboardProvider);
-      ref.invalidate(claimsProvider);
+      ref.invalidate(dashboardProvider);`r`n      ref.invalidate(claimsProvider);`r`n      await Future.delayed(const Duration(seconds: 2));`r`n      ref.invalidate(dashboardProvider);`r`n      ref.invalidate(claimsProvider);
       messenger.showSnackBar(const SnackBar(
         content: Text('Claim submitted! Check Claims tab.'),
         backgroundColor: Colors.green,
@@ -390,7 +401,7 @@ class _ClearWeatherCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('All clear in your area!', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-              Text('No active disruptions in $city', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+              Text('No Active Disruptions in $city', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
             ],
           ),
         ],
@@ -479,3 +490,6 @@ class _ClaimTile extends StatelessWidget {
     );
   }
 }
+
+
+

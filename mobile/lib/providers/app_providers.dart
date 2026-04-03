@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:susanoo/services/api_service.dart';
+import 'package:susanoo/services/location_service.dart';
 
 // ── Core providers ────────────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> _checkAuth() async {
     final loggedIn = await _api.isLoggedIn();
     state = state.copyWith(isLoggedIn: loggedIn);
+    if (loggedIn) LocationService.startTracking(_api);
   }
 
   Future<void> forceLogout() async {
@@ -87,6 +89,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> completeRegistration() async {
     state = state.copyWith(isLoggedIn: true, isNewUser: false);
+    LocationService.startTracking(_api);
   }
 
   void setPlatform(String platform) {

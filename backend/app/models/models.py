@@ -84,11 +84,15 @@ class Worker(Base):
     avg_daily_earnings = Column(Float, default=600.0)
     active_days_30 = Column(Integer, default=0, nullable=True)  # active delivery days in last 30 days
     risk_score = Column(Float, default=0.5)
+    last_known_lat = Column(Float, nullable=True)
+    last_known_lng = Column(Float, nullable=True)
+    last_location_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     policies = relationship("Policy", back_populates="worker")
     claims = relationship("Claim", back_populates="worker")
+    location_pings = relationship("WorkerLocationPing", back_populates="worker")
 
 
 class Policy(Base):
@@ -180,3 +184,46 @@ class Payout(Base):
     reconciled = Column(Boolean, default=False, nullable=True)
 
     claim = relationship("Claim", back_populates="payout")
+
+
+class WorkerLocationPing(Base):
+    """Stores worker GPS pings every 10 min during active hours for anti-spoofing."""
+    __tablename__ = "worker_location_pings"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    worker_id = Column(String, ForeignKey("workers.id"), nullable=False)
+    lat = Column(Float, nullable=False)
+    lng = Column(Float, nullable=False)
+    accuracy = Column(Float, nullable=True)       # GPS accuracy in meters
+    speed_kmh = Column(Float, nullable=True)      # km/h since last ping — >200 = spoof
+    distance_km = Column(Float, nullable=True)    # km from last ping
+    is_suspicious = Column(Boolean, default=False) # flagged if impossible movement
+    city_detected = Column(String(100), nullable=True)
+    pincode_detected = Column(String(10), nullable=True)
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    worker = relationship("Worker", back_populates="location_pings")
+
+
+class WorkerLocationPing(Base):
+    """
+    Stores worker GPS pings every 10 minutes during active hours (6am-10pm IST).
+    Used for:
+    1. GPS spoof detection — sudden jumps >50km in <10min = impossible
+    2. Claim validation — worker must be in disruption city at event time
+    3. Zone verification — pincode prefix must match registered zone
+    """
+    __tablename__ = "worker_location_pings"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    worker_id = Column(String, ForeignKey("workers.id"), nullable=False)
+    lat = Column(Float, nullable=False)
+    lng = Column(Float, nullable=False)
+    accuracy_meters = Column(Float, nullable=True)
+    city = Column(String(100), nullable=True)       # reverse-geocoded city
+    pincode = Column(String(10), nullable=True)     # reverse-geocoded pincode
+    is_spoofed = Column(Boolean, default=False)     # flagged by jump detection
+    distance_from_last_km = Column(Float, nullable=True)  # km from previous ping
+    pinged_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    worker = relationship("Worker", back_populates="location_pings")

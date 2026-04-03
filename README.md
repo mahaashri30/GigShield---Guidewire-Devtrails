@@ -27,7 +27,7 @@
 9. [Zero-Touch Claims & Settlement](#9-zero-touch-claims--settlement)
 10. [AI / ML Models](#10-ai--ml-models)
 11. [Actuarial Engine](#11-actuarial-engine)
-12. [Fraud Defense](#12-fraud-defense)
+12. [Fraud Defense & GPS Anti-Spoofing](#12-fraud-defense--gps-anti-spoofing)
 13. [Tech Stack](#13-tech-stack)
 14. [System Architecture](#14-system-architecture)
 15. [Repository Structure](#15-repository-structure)
@@ -340,17 +340,46 @@ Charged: ₹49/week (subsidised for adoption — cross-subsidised by Pro tier)
 
 ---
 
-## 12. Fraud Defense
+## 12. Fraud Defense & GPS Anti-Spoofing
 
 ### Rule-Based Scoring (Live)
 
 | Rule | Score | Rationale |
 |------|-------|-----------|
 | City mismatch | +40 | Worker in Delhi cannot claim Chennai flood |
+| GPS location mismatch | +35 | Last GPS ping shows different city than event |
+| GPS spoof detected | +30 | Impossible movement speed >200 km/h between pings |
 | Platform inactive | +25 | Offline during disruption = not affected |
 | High claim frequency ≥5/week | +20 | Statistically anomalous |
 | Duplicate claim | +50 | Hard block — same event claimed twice |
 | Suspicious speed <30s | +15 | Bot-filed claim |
+
+### GPS Location Tracking (Anti-Spoofing)
+Susanoo tracks worker location every **10 minutes** during active delivery hours (6am–10pm IST):
+
+```
+Flutter app (background) → GPS ping every 10 min → POST /api/v1/location/ping
+        ↓
+Backend calculates:
+  distance_km = haversine(last_ping, current_ping)
+  speed_kmh   = distance_km / time_elapsed_hours
+  is_suspicious = speed_kmh > 200 km/h  ← physically impossible for delivery worker
+        ↓
+On claim trigger:
+  last_known_city checked against event city  (+35 if mismatch)
+  suspicious ping in last 30 min             (+30 if detected)
+```
+
+**Why 200 km/h threshold?**
+- Delivery bike max speed: ~60 km/h
+- Car max speed: ~120 km/h
+- Anything >200 km/h = GPS coordinates were teleported = spoof
+
+**Worker privacy:**
+- Location only tracked during active hours (6am–10pm)
+- Only city-level data used for fraud check
+- Worker can deny permission — app still works, but fraud score sensitivity increases
+- "You can change this anytime in Settings" shown in permission dialog
 
 ### Network-Level Fraud Ring Detection
 ```
@@ -367,6 +396,7 @@ Action: Freeze all payouts → manual review → 50% provisional payout to genui
 - Workers flagged for review receive **50% provisional payout immediately**
 - Review completed within 24 hours
 - Clean claim history reduces fraud score sensitivity over time
+- Location permission denial does not block claims — only increases scrutiny
 
 ---
 
@@ -382,6 +412,8 @@ Action: Freeze all payouts → manual review → 50% provisional payout to genui
 | flutter_secure_storage | Secure token storage |
 | Razorpay Flutter SDK | In-app payment sheet |
 | Pinput | OTP input UI |
+| permission_handler | Location permission dialog |
+| geolocator | GPS coordinates every 10 min |
 
 ### Backend
 | Technology | Purpose |
@@ -470,10 +502,11 @@ susanoo/
 │   │   │   ├── auth.py           # OTP login, JWT tokens
 │   │   │   ├── workers.py        # Registration, dashboard, earnings
 │   │   │   ├── policies.py       # Buy policy, Razorpay, quote
-│   │   │   ├── claims.py         # Trigger claim, city pools, active hours
+│   │   │   ├── claims.py         # Trigger claim, city pools, active hours, GPS fraud
 │   │   │   ├── disruptions.py    # Simulate, list active events
 │   │   │   ├── payouts.py        # Payout history
 │   │   │   ├── actuarial.py      # BCR, stress test, premium formula
+│   │   │   ├── location.py       # GPS ping every 10min + spoof detection
 │   │   │   └── admin.py          # Clear test data
 │   │   ├── models/models.py      # SQLAlchemy ORM
 │   │   ├── schemas/schemas.py    # Pydantic schemas
@@ -501,11 +534,12 @@ susanoo/
 │   └── lib/
 │       ├── main.dart
 │       ├── router/app_router.dart
-│       ├── providers/app_providers.dart  # devModeProvider
-│       ├── services/api_service.dart
+│       ├── providers/app_providers.dart  # devModeProvider + location tracking start
+│       ├── services/api_service.dart     # HTTP client + location ping
+│       ├── services/location_service.dart # GPS ping every 10min background service
 │       ├── screens/
 │       │   ├── onboarding/       # Phone, OTP (dev mode detection), Register
-│       │   ├── home/             # Dashboard, disruptions, simulate (dev only)
+│       │   ├── home/             # Dashboard, disruptions (auto-claimed badge)
 │       │   ├── policy/           # View + Buy (AI premium breakdown)
 │       │   ├── claims/           # Claims history with DSS + fraud score
 │       │   └── profile/

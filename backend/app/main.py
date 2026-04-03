@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from sqlalchemy import text
 import traceback
 
-from app.api import auth, workers, policies, claims, payouts, disruptions, actuarial, admin
+from app.api import auth, workers, policies, claims, payouts, disruptions, actuarial, admin, location
 from app.database import engine, Base
 
 
@@ -17,6 +17,9 @@ async def lifespan(app: FastAPI):
         # Add new columns if they don't exist (safe migration)
         new_columns = [
             "ALTER TABLE workers ADD COLUMN IF NOT EXISTS active_days_30 INTEGER DEFAULT 0",
+            "ALTER TABLE workers ADD COLUMN IF NOT EXISTS last_known_lat FLOAT",
+            "ALTER TABLE workers ADD COLUMN IF NOT EXISTS last_known_lng FLOAT",
+            "ALTER TABLE workers ADD COLUMN IF NOT EXISTS last_location_at TIMESTAMPTZ",
             "ALTER TABLE payouts ADD COLUMN IF NOT EXISTS channel VARCHAR(20) DEFAULT 'UPI'",
             "ALTER TABLE payouts ADD COLUMN IF NOT EXISTS settlement_seconds INTEGER",
             "ALTER TABLE payouts ADD COLUMN IF NOT EXISTS rollback_at TIMESTAMPTZ",
@@ -60,6 +63,7 @@ app.include_router(payouts.router, prefix="/api/v1/payouts", tags=["Payouts"])
 app.include_router(disruptions.router, prefix="/api/v1/disruptions", tags=["Disruptions"])
 app.include_router(actuarial.router, prefix="/api/v1/actuarial", tags=["Actuarial"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
+app.include_router(location.router, prefix="/api/v1/location", tags=["Location"])
 
 
 @app.get("/")

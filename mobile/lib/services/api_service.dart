@@ -184,4 +184,13 @@ class ApiService {
     final res = await _dio.get('/payouts/');
     return res.data;
   }
+
+  Future<Map<String, dynamic>> sendLocationPing(double lat, double lng, double accuracy) async {
+    final res = await _dio.post('/location/ping', data: {
+      'lat': lat,
+      'lng': lng,
+      'accuracy': accuracy,
+    });
+    return res.data;
+  }
 }

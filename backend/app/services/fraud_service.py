@@ -24,6 +24,8 @@ def calculate_fraud_score(
     claims_same_event: int,
     event_started_at: datetime,
     claim_created_at: datetime,
+    last_known_city: str = "",
+    had_suspicious_ping: bool = False,
 ) -> dict:
     """
     Rule-based fraud scoring (0 = clean, 100 = definite fraud).
@@ -36,6 +38,11 @@ def calculate_fraud_score(
     if worker_city.lower() != event_city.lower():
         score += 40
         flags.append(f"CITY_MISMATCH: Worker in {worker_city}, event in {event_city}")
+
+    # Rule 1b: Last GPS location mismatch (anti-spoofing)
+    if last_known_city and last_known_city.lower() != event_city.lower():
+        score += 35
+        flags.append(f"GPS_LOCATION_MISMATCH: Last GPS ping shows {last_known_city}, event in {event_city}")
 
     # Rule 2: Worker not active on platform during event
     if not was_platform_active:
@@ -63,6 +70,11 @@ def calculate_fraud_score(
     if 0 < time_delta < 30:
         score += 15
         flags.append(f"SUSPICIOUS_SPEED: Claim filed {time_delta:.0f}s after event start")
+
+    # Rule 6: Suspicious GPS ping detected (impossible movement speed)
+    if had_suspicious_ping:
+        score += 30
+        flags.append("GPS_SPOOF_DETECTED: Impossible movement speed in location history")
 
     score = min(score, 100.0)
 
