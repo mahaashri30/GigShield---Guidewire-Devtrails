@@ -17,7 +17,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _upiCtrl  = TextEditingController();
   final _formKey  = GlobalKey<FormState>();
 
-  String _selectedCity = 'Bangalore';
+  String? _selectedCity;
   String _pincode      = '560001';
   bool   _loading      = false;
 
@@ -49,7 +49,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         'phone': '',
         'name': _nameCtrl.text.trim(),
         'platform': platform,
-        'city': _selectedCity,
+        'city': _selectedCity ?? 'Bangalore',
         'pincode': _pincode,
         'upi_id': _upiCtrl.text.trim().isEmpty ? null : _upiCtrl.text.trim(),
       });
@@ -123,10 +123,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   value: _selectedCity,
-                  decoration: const InputDecoration(hintText: 'Select city'),
+                  decoration: const InputDecoration(hintText: 'Select your city'),
                   items: AppConstants.supportedCities
                       .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                       .toList(),
+                  validator: (v) => v == null ? 'Please select your city' : null,
                   onChanged: (v) => setState(() {
                     _selectedCity = v!;
                     _pincode = _cityPincode[v] ?? '560001';

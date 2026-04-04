@@ -33,13 +33,16 @@ class _PlatformScreenState extends ConsumerState<PlatformScreen> {
       });
     } catch (_) {
       if (!mounted) return;
-      setState(() => _fetchState = _FetchState.done);
+      // Even if fetch fails, allow user to continue
+      setState(() {
+        _earnings = null;
+        _fetchState = _FetchState.done;
+      });
     }
   }
 
   void _continue() {
     if (_selected == null) return;
-    // Store selected platform in auth state so register screen can read it
     ref.read(authProvider.notifier).setPlatform(_selected!);
     context.go('/auth/register');
   }
@@ -159,7 +162,26 @@ class _PlatformScreenState extends ConsumerState<PlatformScreen> {
         );
 
       case _FetchState.done:
-        if (_earnings == null) return const SizedBox.shrink();
+        if (_earnings == null) {
+          // Fetch failed but still allow continue
+          return _Card(
+            key: const ValueKey('done-no-data'),
+            color: const Color(0xFFFFF8E1),
+            border: const Color(0xFFFFE082),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline_rounded, color: Color(0xFFF59E0B), size: 18),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Could not fetch earnings right now. You can still continue.',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF78350F)),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
         final avg    = (_earnings!['avg_daily_earnings'] as num?)?.toStringAsFixed(0) ?? '—';
         final weekly = (_earnings!['weekly_settlement']  as num?)?.toStringAsFixed(0) ?? '—';
         final days   = _earnings!['active_days_last_week'] ?? '—';
