@@ -139,7 +139,7 @@ function Sidebar({ active, setActive }) {
     <div className="sidebar">
       <div className="sidebar-logo">
         <span>🛡️</span>
-        <span>GigShield</span>
+        <span>Susanoo</span>
       </div>
       {items.map(item => (
         <div
