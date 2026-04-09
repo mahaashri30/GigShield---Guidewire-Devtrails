@@ -47,6 +47,8 @@ class AppStrings {
   final String active;
   final String buyNow;
   final String allClear;
+  final String simulateEvent;
+  final String hello;
   // Claims
   final String claimsHistory;
   final String noClaimsYet;
@@ -152,6 +154,8 @@ class AppStrings {
     required this.active,
     required this.buyNow,
     required this.allClear,
+    required this.simulateEvent,
+    required this.hello,
     required this.claimsHistory,
     required this.noClaimsYet,
     required this.claimsAutoTriggeredDesc,
@@ -214,7 +218,7 @@ class AppStrings {
 
 const _en = AppStrings(
   languageName: 'English',
-  welcome: 'Welcome to\nSusanoo 🛡️',
+  welcome: 'Welcome to\nSusanoo',
   welcomeSub: '"The Ultimate Defense" for delivery heroes.\nEnter your mobile number to get started.',
   mobileNumber: 'Mobile Number',
   sendOtp: 'Send OTP',
@@ -224,7 +228,7 @@ const _en = AppStrings(
   verifying: 'Verifying...',
   termsPrivacy: 'By continuing, you agree to our Terms & Privacy Policy',
   howItWorks: 'How it works',
-  howItWorksReal: '• Real users: Enter your registered mobile number to receive a live OTP via SMS.',
+  howItWorksReal: '• Real users: Enter your registered mobile number to receive a live OTP via phone call.',
   howItWorksDemo: '• Demo / Testing: Use any number and enter OTP 123456 to explore the app in demo mode.',
   serverWakeup: 'Please wait up to 30 seconds\nfor the server to wake up.',
   invalidPhone: 'Enter a valid 10-digit number',
@@ -257,6 +261,8 @@ const _en = AppStrings(
   active: 'Active',
   buyNow: 'Buy Now',
   allClear: 'All clear in your area!',
+  simulateEvent: 'Simulate Event',
+  hello: 'Hello',
   claimsHistory: 'Claims History',
   noClaimsYet: 'No claims yet',
   claimsAutoTriggeredDesc: 'Claims are auto-triggered when a\ndisruption event is detected in your area.',
@@ -315,7 +321,7 @@ const _en = AppStrings(
 
 const _ta = AppStrings(
   languageName: 'தமிழ்',
-  welcome: 'சுசானூவிற்கு\nவரவேற்கிறோம் 🛡️',
+  welcome: 'சுசானூவிற்கு\nவரவேற்கிறோம்',
   welcomeSub: 'டெலிவரி ஹீரோக்களுக்கான "இறுதி பாதுகாப்பு".\nதொடங்க உங்கள் மொபைல் எண்ணை உள்ளிடவும்.',
   mobileNumber: 'மொபைல் எண்',
   sendOtp: 'OTP அனுப்பு',
@@ -325,7 +331,7 @@ const _ta = AppStrings(
   verifying: 'சரிபார்க்கிறது...',
   termsPrivacy: 'தொடர்வதன் மூலம், எங்கள் விதிமுறைகள் & தனியுரிமைக் கொள்கையை ஒப்புக்கொள்கிறீர்கள்',
   howItWorks: 'எப்படி செயல்படுகிறது',
-  howItWorksReal: '• உண்மையான பயனர்கள்: SMS மூலம் நேரடி OTP பெற உங்கள் பதிவு செய்யப்பட்ட மொபைல் எண்ணை உள்ளிடவும்.',
+  howItWorksReal: '• உண்மையான பயனர்கள்: OTP தொலைபேசி அழைப்பு மூலம் பெற உங்கள் பதிவு செய்யப்பட்ட மொபைல் எண்ணை உள்ளிடவும்.',
   howItWorksDemo: '• டெமோ / சோதனை: எந்த எண்ணையும் பயன்படுத்தி OTP 123456 உள்ளிட்டு டெமோ பயன்முறையை ஆராயவும்.',
   serverWakeup: 'சர்வர் விழிப்படைய\n30 வினாடிகள் வரை காத்திருக்கவும்.',
   invalidPhone: 'சரியான 10 இலக்க எண்ணை உள்ளிடவும்',
@@ -358,6 +364,8 @@ const _ta = AppStrings(
   active: 'செயலில்',
   buyNow: 'இப்போது வாங்கு',
   allClear: 'உங்கள் பகுதியில் அனைத்தும் தெளிவாக உள்ளது!',
+  simulateEvent: 'எடுத்துக்காட்டு செய்',
+  hello: 'வணக்கம்',
   claimsHistory: 'கோரிக்கை வரலாறு',
   noClaimsYet: 'இன்னும் கோரிக்கைகள் இல்லை',
   claimsAutoTriggeredDesc: 'உங்கள் பகுதியில் இடையூறு கண்டறியப்படும்போது\nகோரிக்கைகள் தானாக தொடங்கப்படும்.',
@@ -416,7 +424,7 @@ const _ta = AppStrings(
 
 const _hi = AppStrings(
   languageName: 'हिंदी',
-  welcome: 'सुसानू में\nआपका स्वागत है 🛡️',
+  welcome: 'सुसानू में\nआपका स्वागत है',
   welcomeSub: 'डिलीवरी हीरोज़ के लिए "अंतिम सुरक्षा".\nशुरू करने के लिए अपना मोबाइल नंबर दर्ज करें।',
   mobileNumber: 'मोबाइल नंबर',
   sendOtp: 'OTP भेजें',
@@ -426,7 +434,7 @@ const _hi = AppStrings(
   verifying: 'सत्यापित हो रहा है...',
   termsPrivacy: 'जारी रखकर, आप हमारी शर्तें और गोपनीयता नीति से सहमत हैं',
   howItWorks: 'यह कैसे काम करता है',
-  howItWorksReal: '• वास्तविक उपयोगकर्ता: SMS के माध्यम से लाइव OTP प्राप्त करने के लिए अपना पंजीकृत मोबाइल नंबर दर्ज करें।',
+  howItWorksReal: '• वास्तविक उपयोगकर्ता: फ़ोन कॉल के माध्यम से लाइव OTP प्राप्त करने के लिए अपना पंजीकृत मोबाइल नंबर दर्ज करें।',
   howItWorksDemo: '• डेमो / परीक्षण: कोई भी नंबर उपयोग करें और डेमो मोड में ऐप देखने के लिए OTP 123456 दर्ज करें।',
   serverWakeup: 'सर्वर के जागने के लिए\n30 सेकंड तक प्रतीक्षा करें।',
   invalidPhone: 'वैध 10 अंकों का नंबर दर्ज करें',
@@ -459,6 +467,8 @@ const _hi = AppStrings(
   active: 'सक्रिय',
   buyNow: 'अभी खरीदें',
   allClear: 'आपके क्षेत्र में सब साफ है!',
+  simulateEvent: 'घटना सिमुलेट करें',
+  hello: 'नमस्ते',
   claimsHistory: 'दावों का इतिहास',
   noClaimsYet: 'अभी तक कोई दावा नहीं',
   claimsAutoTriggeredDesc: 'आपके क्षेत्र में व्यवधान का पता चलने पर\nदावे स्वचालित रूप से शुरू होते हैं।',

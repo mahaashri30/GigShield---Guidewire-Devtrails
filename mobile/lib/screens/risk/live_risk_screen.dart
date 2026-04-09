@@ -17,7 +17,14 @@ class LiveRiskScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
-        title: Text('⚡ ${s.liveRisk}', style: const TextStyle(fontWeight: FontWeight.w800)),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.bolt_rounded, color: AppTheme.warning, size: 22),
+            const SizedBox(width: 6),
+            Text(s.liveRisk, style: const TextStyle(fontWeight: FontWeight.w800)),
+          ],
+        ),
         backgroundColor: Colors.white,
         actions: [
           IconButton(

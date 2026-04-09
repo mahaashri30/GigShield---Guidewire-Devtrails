@@ -160,16 +160,10 @@ class _ActivePolicyView extends ConsumerWidget {
   }
 
   List<String> _getTriggers(String tier) {
-    final rain = AppConstants.disruptionLabels['heavy_rain']!;
-    final heat = AppConstants.disruptionLabels['extreme_heat']!;
-    final aqi = AppConstants.disruptionLabels['aqi_spike']!;
-    final traffic = AppConstants.disruptionLabels['traffic_disruption']!;
-    final civic = AppConstants.disruptionLabels['civic_emergency']!;
-
     switch (tier) {
-      case 'basic': return [rain];
-      case 'smart': return [rain, heat, aqi];
-      case 'pro': return [rain, heat, aqi, traffic, civic];
+      case 'basic': return ['Heavy Rain'];
+      case 'smart': return ['Heavy Rain', 'Extreme Heat', 'AQI Spike'];
+      case 'pro':   return ['Heavy Rain', 'Extreme Heat', 'AQI Spike', 'Traffic', 'Emergency'];
       default: return [];
     }
   }

@@ -29,7 +29,7 @@ class HomeScreen extends ConsumerWidget {
 
           return CustomScrollView(
             slivers: [
-              _buildAppBar(context, worker),
+              _buildAppBar(context, worker, s),
               SliverPadding(
                 padding: const EdgeInsets.all(20),
                 sliver: SliverList(
@@ -62,7 +62,9 @@ class HomeScreen extends ConsumerWidget {
                     if (disruptions.isNotEmpty) ...[
                       Row(
                         children: [
-                          Text('⚠️ ${s.activeDisruptions}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                          const Icon(Icons.warning_rounded, color: AppTheme.warning, size: 20),
+                          const SizedBox(width: 6),
+                          Text(s.activeDisruptions, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                           const Spacer(),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -104,7 +106,7 @@ class HomeScreen extends ConsumerWidget {
                           const SizedBox(width: 12),
                           Expanded(child: _QuickAction(
                             icon: Icons.cloud_rounded,
-                            label: 'Simulate Event',
+                            label: s.simulateEvent,
                             color: AppTheme.warning,
                             onTap: () => _simulate(context, ref, worker['city'] ?? 'Bangalore', worker['pincode'] ?? '560001'),
                           )),
@@ -172,7 +174,7 @@ class HomeScreen extends ConsumerWidget {
     }
   }
 
-  SliverAppBar _buildAppBar(BuildContext context, Map<String, dynamic> worker) {
+  SliverAppBar _buildAppBar(BuildContext context, Map<String, dynamic> worker, dynamic s) {
     return SliverAppBar(
       expandedHeight: 120,
       floating: true,
@@ -188,7 +190,7 @@ class HomeScreen extends ConsumerWidget {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   Text(
-                    'Hello, ${(worker['name'] as String?)?.split(' ').first ?? 'Rider'} 👋',
+                    '${s.hello}, ${(worker['name'] as String?)?.split(' ').first ?? 'Rider'}',
                     style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
                   ),
                   Text(
