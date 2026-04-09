@@ -58,12 +58,19 @@ class _LocationPermissionWrapperState
     final permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.always ||
         permission == LocationPermission.whileInUse) return;
-    await Future.delayed(const Duration(milliseconds: 800));
-    if (!mounted) return;
+
     if (permission == LocationPermission.deniedForever) {
-      _showSettingsDialog();
-    } else {
-      _showPermissionDialog();
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (mounted) _showSettingsDialog();
+      return;
+    }
+
+    // First launch or previously denied — request directly to trigger native OS dialog
+    final result = await Geolocator.requestPermission();
+    if ((result == LocationPermission.denied) && mounted) {
+      // User denied — show our rationale dialog for next time
+      await Future.delayed(const Duration(milliseconds: 400));
+      if (mounted) _showPermissionDialog();
     }
   }
 

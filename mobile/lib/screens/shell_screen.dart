@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:susanoo/providers/locale_provider.dart';
 import 'package:susanoo/theme/app_theme.dart';
 
-class ShellScreen extends StatelessWidget {
+class ShellScreen extends ConsumerWidget {
   final Widget child;
   const ShellScreen({super.key, required this.child});
 
@@ -10,14 +12,15 @@ class ShellScreen extends StatelessWidget {
     final loc = GoRouterState.of(context).matchedLocation;
     if (loc.startsWith('/policy')) return 1;
     if (loc.startsWith('/claims')) return 2;
-    if (loc.startsWith('/risk'))   return 3;
+    if (loc.startsWith('/risk')) return 3;
     if (loc.startsWith('/profile')) return 4;
     return 0;
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final idx = _locationIndex(context);
+    final s = ref.watch(stringsProvider);
     return Scaffold(
       body: child,
       bottomNavigationBar: Container(
@@ -31,11 +34,11 @@ class ShellScreen extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _NavItem(icon: Icons.home_rounded, label: 'Home', active: idx == 0, onTap: () => context.go('/home')),
-                _NavItem(icon: Icons.shield_rounded, label: 'Policy', active: idx == 1, onTap: () => context.go('/policy')),
-                _NavItem(icon: Icons.receipt_long_rounded, label: 'Claims', active: idx == 2, onTap: () => context.go('/claims')),
+                _NavItem(icon: Icons.home_rounded, label: s.home, active: idx == 0, onTap: () => context.go('/home')),
+                _NavItem(icon: Icons.shield_rounded, label: s.policy, active: idx == 1, onTap: () => context.go('/policy')),
+                _NavItem(icon: Icons.receipt_long_rounded, label: s.claims, active: idx == 2, onTap: () => context.go('/claims')),
                 _NavItem(icon: Icons.monitor_heart_rounded, label: 'Risk', active: idx == 3, onTap: () => context.go('/risk')),
-                _NavItem(icon: Icons.person_rounded, label: 'Profile', active: idx == 4, onTap: () => context.go('/profile')),
+                _NavItem(icon: Icons.person_rounded, label: s.profile, active: idx == 4, onTap: () => context.go('/profile')),
               ],
             ),
           ),

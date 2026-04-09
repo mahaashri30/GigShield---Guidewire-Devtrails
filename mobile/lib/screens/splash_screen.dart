@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:susanoo/theme/app_theme.dart';
 import 'package:susanoo/providers/app_providers.dart';
+import 'package:susanoo/utils/constants.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -31,9 +33,15 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
   void _navigate() async {
     if (!mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    final termsAccepted = prefs.getBool(AppConstants.termsAcceptedKey) ?? false;
     final loggedIn = await ref.read(apiServiceProvider).isLoggedIn();
     if (!mounted) return;
-    context.go(loggedIn ? '/home' : '/auth/phone');
+    if (!termsAccepted) {
+      context.go('/auth/terms');
+    } else {
+      context.go(loggedIn ? '/home' : '/auth/phone');
+    }
   }
 
   @override

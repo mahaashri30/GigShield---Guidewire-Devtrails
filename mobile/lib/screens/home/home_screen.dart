@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:susanoo/providers/locale_provider.dart';
 import 'package:susanoo/theme/app_theme.dart';
 import 'package:susanoo/providers/app_providers.dart';
 import 'package:susanoo/utils/constants.dart';
@@ -19,6 +20,7 @@ class HomeScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (data) {
+          final s = ref.watch(stringsProvider);
           final worker = data['worker'] as Map<String, dynamic>? ?? {};
           final policy = data['active_policy'] as Map<String, dynamic>?;
           final disruptions = data['active_disruptions'] as List<dynamic>? ?? [];
@@ -40,14 +42,14 @@ class HomeScreen extends ConsumerWidget {
                     Row(
                       children: [
                         Expanded(child: _StatCard(
-                          label: 'Protected This Month',
+                          label: s.policy,
                           value: '₹${totalProtected.toStringAsFixed(0)}',
                           icon: Icons.savings_rounded,
                           color: AppTheme.success,
                         )),
                         const SizedBox(width: 12),
                         Expanded(child: _StatCard(
-                          label: 'Claims Filed',
+                          label: s.claims,
                           value: '${claims.length}',
                           icon: Icons.receipt_long_rounded,
                           color: AppTheme.primary,
@@ -60,7 +62,7 @@ class HomeScreen extends ConsumerWidget {
                     if (disruptions.isNotEmpty) ...[
                       Row(
                         children: [
-                          const Text('⚠️ Active Disruptions', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                          Text('⚠️ ${s.activeDisruptions}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                           const Spacer(),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -68,7 +70,7 @@ class HomeScreen extends ConsumerWidget {
                               color: AppTheme.success.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(6),
                             ),
-                            child: const Text('Auto-claimed', style: TextStyle(fontSize: 11, color: AppTheme.success, fontWeight: FontWeight.w600)),
+                            child: Text(s.activeDisruptions, style: const TextStyle(fontSize: 11, color: AppTheme.success, fontWeight: FontWeight.w600)),
                           ),
                         ],
                       ),
@@ -88,13 +90,13 @@ class HomeScreen extends ConsumerWidget {
                     ],
 
                     // Quick actions
-                    const Text('Quick Actions', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                    Text(s.home, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 10),
                     Row(
                       children: [
                         Expanded(child: _QuickAction(
                           icon: Icons.add_circle_rounded,
-                          label: policy == null ? 'Buy Policy' : 'Renew Policy',
+                          label: policy == null ? s.buyPolicy : s.buyPolicy,
                           color: AppTheme.primary,
                           onTap: () => context.go('/policy/buy'),
                         )),
@@ -116,11 +118,11 @@ class HomeScreen extends ConsumerWidget {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Recent Claims', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                          Text(s.claims, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                           TextButton(onPressed: () => context.go('/claims'), child: const Text('See all')),
                         ],
                       ),
-                      ...claims.take(3).map((c) => _ClaimTile(claim: c as Map<String, dynamic>)),
+                      ...claims.take(3).map((c) => _ClaimTile(claim: c as Map<String, dynamic>, s: s)),
                     ],
 
                     const SizedBox(height: 32),
@@ -523,7 +525,8 @@ class _QuickAction extends StatelessWidget {
 
 class _ClaimTile extends StatelessWidget {
   final Map<String, dynamic> claim;
-  const _ClaimTile({required this.claim});
+  final dynamic s;
+  const _ClaimTile({required this.claim, required this.s});
 
   @override
   Widget build(BuildContext context) {
@@ -538,6 +541,11 @@ class _ClaimTile extends StatelessWidget {
       'rejected': AppTheme.danger,
       'pending': AppTheme.warning,
     }[status] ?? AppTheme.textSecondary;
+    final statusLabel = {
+      'paid': s.paid,
+      'approved': s.approved,
+      'pending': s.pending,
+    }[status] ?? status.toUpperCase();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -564,7 +572,7 @@ class _ClaimTile extends StatelessWidget {
               color: statusColor.withOpacity(0.1),
               borderRadius: BorderRadius.circular(6),
             ),
-            child: Text(status.toUpperCase(), style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.w700)),
+            child: Text(statusLabel, style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.w700)),
           ),
         ],
       ),

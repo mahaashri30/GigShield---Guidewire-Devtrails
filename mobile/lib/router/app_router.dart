@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:susanoo/providers/app_providers.dart';
 import 'package:susanoo/screens/splash_screen.dart';
 import 'package:susanoo/screens/onboarding/phone_screen.dart';
+import 'package:susanoo/screens/onboarding/terms_screen.dart';
 import 'package:susanoo/screens/onboarding/otp_screen.dart';
 import 'package:susanoo/screens/onboarding/platform_screen.dart';
 import 'package:susanoo/screens/onboarding/register_screen.dart';
@@ -54,10 +55,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
-      GoRoute(
-        path: '/auth/phone',
-        builder: (_, __) => const PhoneScreen(),
-      ),
+      GoRoute(path: '/auth/terms', builder: (_, __) => const TermsScreen()),
+      GoRoute(path: '/auth/phone', builder: (_, __) => const PhoneScreen()),
       GoRoute(
         path: '/auth/otp',
         builder: (context, state) {

@@ -13,6 +13,7 @@ class AppConstants {
   static const String refreshTokenKey = 'refresh_token';
   static const String workerIdKey = 'worker_id';
   static const String onboardingDoneKey = 'onboarding_done';
+  static const String termsAcceptedKey = 'terms_accepted';
 
   // Policy Tier Labels
   static const Map<String, String> tierLabels = {
