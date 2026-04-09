@@ -24,6 +24,9 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE payouts ADD COLUMN IF NOT EXISTS settlement_seconds INTEGER",
             "ALTER TABLE payouts ADD COLUMN IF NOT EXISTS rollback_at TIMESTAMPTZ",
             "ALTER TABLE payouts ADD COLUMN IF NOT EXISTS reconciled BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE disruption_events ADD COLUMN IF NOT EXISTS lat FLOAT",
+            "ALTER TABLE disruption_events ADD COLUMN IF NOT EXISTS lng FLOAT",
+            "ALTER TABLE disruption_events ADD COLUMN IF NOT EXISTS radius_km FLOAT DEFAULT 5.0",
         ]
         for sql in new_columns:
             try:
@@ -53,7 +56,15 @@ app.add_middleware(
 async def global_exception_handler(request: Request, exc: Exception):
     tb = traceback.format_exc()
     print(f"[500 ERROR] {request.method} {request.url}\n{tb}")
-    return JSONResponse(status_code=500, content={"detail": str(exc), "traceback": tb})
+    
+    response_content = {"detail": str(exc)}
+    if settings.ENVIRONMENT == "development":
+        response_content["traceback"] = tb
+        
+    return JSONResponse(
+        status_code=500, 
+        content=response_content
+    )
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(workers.router, prefix="/api/v1/workers", tags=["Workers"])

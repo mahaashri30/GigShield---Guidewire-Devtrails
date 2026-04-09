@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:susanoo/providers/locale_provider.dart';
 import 'package:susanoo/theme/app_theme.dart';
 import 'package:susanoo/providers/app_providers.dart';
 import 'package:susanoo/utils/constants.dart';
@@ -11,11 +12,12 @@ class ClaimsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final claimsAsync = ref.watch(claimsProvider);
+    final s = ref.watch(stringsProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
-        title: const Text('Claims History'),
+        title: Text(s.claimsHistory),
         backgroundColor: Colors.white,
         actions: [
           IconButton(icon: const Icon(Icons.refresh), onPressed: () => ref.invalidate(claimsProvider)),
@@ -25,7 +27,7 @@ class ClaimsScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (claims) => claims.isEmpty
-            ? const _EmptyState()
+            ? _EmptyState(s: s)
             : ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: claims.length,
@@ -40,7 +42,8 @@ class ClaimsScreen extends ConsumerWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  final dynamic s;
+  const _EmptyState({required this.s});
 
   @override
   Widget build(BuildContext context) {
@@ -50,11 +53,11 @@ class _EmptyState extends StatelessWidget {
         children: [
           Icon(Icons.receipt_long_outlined, size: 64, color: AppTheme.textHint),
           const SizedBox(height: 16),
-          const Text('No claims yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+          Text(s.noClaimsYet, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
-          const Text(
-            'Claims are auto-triggered when a\ndisruption event is detected in your area.',
-            style: TextStyle(color: AppTheme.textSecondary),
+          Text(
+            s.claimsAutoTriggeredDesc,
+            style: const TextStyle(color: AppTheme.textSecondary),
             textAlign: TextAlign.center,
           ),
         ],
@@ -147,6 +150,7 @@ class _ClaimCardState extends State<_ClaimCard>
 
   @override
   Widget build(BuildContext context) {
+    final s = ProviderScope.containerOf(context).read(stringsProvider);
     final claim = widget.claim;
     final status = claim['status'] as String? ?? 'pending';
     final claimed = (claim['claimed_amount'] as num?)?.toDouble() ?? 0;
@@ -160,10 +164,10 @@ class _ClaimCardState extends State<_ClaimCard>
         : '';
 
     final statusConfig = {
-      'paid':     {'color': AppTheme.success, 'icon': Icons.check_circle_rounded, 'label': 'Paid'},
-      'approved': {'color': AppTheme.primary,  'icon': Icons.thumb_up_rounded,    'label': 'Approved'},
-      'rejected': {'color': AppTheme.danger,   'icon': Icons.cancel_rounded,      'label': 'Rejected'},
-      'pending':  {'color': AppTheme.warning,  'icon': Icons.pending_rounded,     'label': 'Pending'},
+      'paid':     {'color': AppTheme.success, 'icon': Icons.check_circle_rounded, 'label': s.paid},
+      'approved': {'color': AppTheme.primary,  'icon': Icons.thumb_up_rounded,    'label': s.approved},
+      'rejected': {'color': AppTheme.danger,   'icon': Icons.cancel_rounded,      'label': s.rejected},
+      'pending':  {'color': AppTheme.warning,  'icon': Icons.pending_rounded,     'label': s.pending},
     };
     final sc = statusConfig[status] ?? statusConfig['pending']!;
     final color = sc['color'] as Color;
@@ -200,7 +204,7 @@ class _ClaimCardState extends State<_ClaimCard>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Claim • $date', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                          Text('${s.claim} • $date', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                           const SizedBox(height: 2),
                           Row(
                             children: [
@@ -212,7 +216,7 @@ class _ClaimCardState extends State<_ClaimCard>
                                     color: AppTheme.primaryLight,
                                     borderRadius: BorderRadius.circular(4),
                                   ),
-                                  child: const Text('AI Auto', style: TextStyle(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.w600)),
+                                  child: Text(s.aiAuto, style: const TextStyle(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.w600)),
                                 ),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -234,7 +238,7 @@ class _ClaimCardState extends State<_ClaimCard>
                             children: [
                               Text('₹${claimed.toStringAsFixed(0)}',
                                   style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppTheme.danger)),
-                              const Text('Rejected', style: TextStyle(fontSize: 11, color: AppTheme.danger)),
+                              Text(s.rejected, style: const TextStyle(fontSize: 11, color: AppTheme.danger)),
                             ],
                           )
                         : _AnimatedAmount(amount: displayAmount, color: color),
@@ -253,9 +257,9 @@ class _ClaimCardState extends State<_ClaimCard>
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _Detail('DSS', '${dss.toInt()}%'),
-                    _Detail('Fraud Score', '$fraudScore/100'),
-                    _Detail('Claimed', '₹${claimed.toStringAsFixed(0)}'),
+                    _Detail(s.dss, '${dss.toInt()}%'),
+                    _Detail(s.fraudScore, '$fraudScore/100'),
+                    _Detail(s.claimed, '₹${claimed.toStringAsFixed(0)}'),
                   ],
                 ),
               ),

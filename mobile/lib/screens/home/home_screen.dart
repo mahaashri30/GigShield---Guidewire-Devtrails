@@ -90,7 +90,7 @@ class HomeScreen extends ConsumerWidget {
                     ],
 
                     // Quick actions
-                    Text(s.home, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                    Text(s.quickActions, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 10),
                     Row(
                       children: [
@@ -119,7 +119,7 @@ class HomeScreen extends ConsumerWidget {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(s.claims, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                          TextButton(onPressed: () => context.go('/claims'), child: const Text('See all')),
+                          TextButton(onPressed: () => context.go('/claims'), child: Text(s.seeAll)),
                         ],
                       ),
                       ...claims.take(3).map((c) => _ClaimTile(claim: c as Map<String, dynamic>, s: s)),
@@ -246,9 +246,10 @@ class _ShieldCardState extends State<_ShieldCard> with SingleTickerProviderState
 
   @override
   Widget build(BuildContext context) {
+    final s = ProviderScope.containerOf(context).read(stringsProvider);
     final hasPolicy = widget.policy != null;
     final tier = widget.policy?['tier'] as String? ?? '';
-    final tierLabel = AppConstants.tierLabels[tier] ?? 'No Policy';
+    final tierLabel = AppConstants.tierLabels[tier] ?? s.noPolicyActive;
     final premium = (widget.policy?['weekly_premium'] as num?)?.toStringAsFixed(0) ?? '0';
     final endDate = widget.policy?['end_date'] != null
         ? DateFormat('dd MMM').format(DateTime.parse(widget.policy!['end_date']))
@@ -288,7 +289,7 @@ class _ShieldCardState extends State<_ShieldCard> with SingleTickerProviderState
                         const Icon(Icons.shield_rounded, color: Colors.white, size: 20),
                         const SizedBox(width: 6),
                         Text(
-                          hasPolicy ? tierLabel : 'No Active Policy',
+                          hasPolicy ? tierLabel : s.noActivePolicy,
                           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16),
                         ),
                       ],
@@ -298,7 +299,9 @@ class _ShieldCardState extends State<_ShieldCard> with SingleTickerProviderState
                       Text('₹$premium/week • Valid till $endDate',
                           style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13)),
                     ] else ...[
-                      Text('Tap to get protected now',
+                      Text(s.protectionDesc,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13)),
                     ],
                   ],
@@ -311,7 +314,7 @@ class _ShieldCardState extends State<_ShieldCard> with SingleTickerProviderState
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  hasPolicy ? 'ACTIVE' : 'BUY NOW',
+                  hasPolicy ? s.active.toUpperCase() : s.buyNow.toUpperCase(),
                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12),
                 ),
               ),
@@ -469,6 +472,7 @@ class _ClearWeatherCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = ProviderScope.containerOf(context).read(stringsProvider);
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -483,8 +487,8 @@ class _ClearWeatherCard extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('All clear in your area!', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-              Text('No Active Disruptions in $city', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+              Text(s.allClear, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+              Text('${s.noDisruptions} in $city', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
             ],
           ),
         ],

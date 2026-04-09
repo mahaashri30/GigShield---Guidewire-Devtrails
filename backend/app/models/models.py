@@ -126,6 +126,9 @@ class DisruptionEvent(Base):
     severity = Column(Enum(DisruptionSeverity), nullable=False)
     city = Column(String(100), nullable=False)
     pincode = Column(String(10), nullable=True)
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
+    radius_km = Column(Float, default=5.0)  # Impact radius in km
     dss_multiplier = Column(Float, nullable=False)
     raw_value = Column(Float, nullable=True)  # mm/hr, °C, AQI value
     description = Column(Text, nullable=True)

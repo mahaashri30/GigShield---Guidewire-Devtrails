@@ -158,15 +158,16 @@ def calculate_payout(
 
     Formula:
     - Expected earnings for the day  = worker_daily_avg
-    - Estimated actual earnings      = worker_daily_avg × (1 - DSS) × active_hours_ratio
-    - Income shortfall (= payout)    = worker_daily_avg - estimated_actual
-                                     = worker_daily_avg × DSS × active_hours_ratio
+    - Income shortfall (= payout)    = worker_daily_avg × DSS × active_hours_ratio
+    
+    Example: 
+    If daily avg = ₹1000, DSS = 0.5 (50% disruption), and ratio = 0.4 (40% of day remaining),
+    Shortfall = 1000 * 0.5 * 0.4 = ₹200.
 
     Capped at (tier daily cap - already claimed today) to prevent over-compensation.
     """
-    expected          = worker_daily_avg
-    estimated_actual  = round(worker_daily_avg * (1 - dss_multiplier) * active_hours_ratio, 2)
-    income_shortfall  = round(expected - estimated_actual, 2)
+    income_shortfall  = round(worker_daily_avg * dss_multiplier * active_hours_ratio, 2)
+    estimated_actual  = round(worker_daily_avg * (1 - (dss_multiplier * active_hours_ratio)), 2)
 
     daily_cap         = MAX_DAILY_PAYOUT[tier]
     remaining_cap     = max(0.0, daily_cap - existing_claimed_today)
@@ -176,7 +177,7 @@ def calculate_payout(
         "worker_daily_avg":   worker_daily_avg,
         "dss_multiplier":     dss_multiplier,
         "active_hours_ratio": active_hours_ratio,
-        "expected_earnings":  expected,
+        "expected_earnings":  worker_daily_avg,
         "estimated_actual":   estimated_actual,
         "income_shortfall":   income_shortfall,
         "raw_payout":         income_shortfall,

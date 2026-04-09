@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:susanoo/providers/locale_provider.dart';
 import 'package:susanoo/theme/app_theme.dart';
 import 'package:susanoo/providers/app_providers.dart';
 import 'package:susanoo/utils/constants.dart';
@@ -12,21 +13,23 @@ class PolicyScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final policyAsync = ref.watch(activePolicyProvider);
+    final s = ref.watch(stringsProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.surface,
-      appBar: AppBar(title: const Text('My Policy'), backgroundColor: Colors.white),
+      appBar: AppBar(title: Text(s.myPolicy), backgroundColor: Colors.white),
       body: policyAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => const _NoPolicyView(),
-        data: (policy) => policy == null ? const _NoPolicyView() : _ActivePolicyView(policy: policy),
+        error: (e, _) => _NoPolicyView(s: s),
+        data: (policy) => policy == null ? _NoPolicyView(s: s) : _ActivePolicyView(policy: policy),
       ),
     );
   }
 }
 
 class _NoPolicyView extends StatelessWidget {
-  const _NoPolicyView();
+  final dynamic s;
+  const _NoPolicyView({required this.s});
 
   @override
   Widget build(BuildContext context) {
@@ -38,21 +41,21 @@ class _NoPolicyView extends StatelessWidget {
           children: [
             Container(
               padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(color: AppTheme.primaryLight, shape: BoxShape.circle),
+              decoration: const BoxDecoration(color: AppTheme.primaryLight, shape: BoxShape.circle),
               child: const Icon(Icons.shield_outlined, size: 56, color: AppTheme.primary),
             ),
             const SizedBox(height: 24),
-            const Text('No Active Policy', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+            Text(s.noActivePolicy, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
-            const Text(
-              'Get protected from income loss due to rain, heat, pollution & more.',
-              style: TextStyle(color: AppTheme.textSecondary, fontSize: 15),
+            Text(
+              s.protectionDesc,
+              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 15),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
             ElevatedButton(
               onPressed: () => context.go('/policy/buy'),
-              child: const Text('Buy Weekly Policy'),
+              child: Text(s.buyWeeklyPolicy),
             ),
           ],
         ),
@@ -61,12 +64,13 @@ class _NoPolicyView extends StatelessWidget {
   }
 }
 
-class _ActivePolicyView extends StatelessWidget {
+class _ActivePolicyView extends ConsumerWidget {
   final Map<String, dynamic> policy;
   const _ActivePolicyView({required this.policy});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(stringsProvider);
     final tier = policy['tier'] as String? ?? '';
     final tierLabel = AppConstants.tierLabels[tier] ?? tier;
     final premium = (policy['weekly_premium'] as num?)?.toStringAsFixed(2) ?? '-';
@@ -113,7 +117,7 @@ class _ActivePolicyView extends StatelessWidget {
                         color: Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Text('ACTIVE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
+                      child: Text(s.active.toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
                     ),
                   ],
                 ),
@@ -128,17 +132,17 @@ class _ActivePolicyView extends StatelessWidget {
           const SizedBox(height: 20),
 
           // Coverage details
-          const Text('Coverage Details', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          Text(s.coverageDetails, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
-          _DetailRow(label: 'Max Daily Payout', value: '₹$maxDaily'),
-          _DetailRow(label: 'Max Weekly Payout', value: '₹$maxWeekly'),
-          _DetailRow(label: 'Total Claimed (This week)', value: '₹$totalClaimed'),
-          _DetailRow(label: 'Claims This Week', value: '$claimsCount'),
+          _DetailRow(label: s.maxDailyPayout, value: '₹$maxDaily'),
+          _DetailRow(label: s.maxWeeklyPayout, value: '₹$maxWeekly'),
+          _DetailRow(label: s.totalClaimedThisWeek, value: '₹$totalClaimed'),
+          _DetailRow(label: s.claimsThisWeek, value: '$claimsCount'),
 
           const SizedBox(height: 20),
 
           // Triggers covered
-          const Text('Triggers Covered', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          Text(s.triggersCovered, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           Wrap(
             spacing: 8, runSpacing: 8,
@@ -148,7 +152,7 @@ class _ActivePolicyView extends StatelessWidget {
           const SizedBox(height: 20),
           OutlinedButton(
             onPressed: () => context.go('/policy/buy'),
-            child: const Text('Renew / Change Plan'),
+            child: Text(s.renewChangePlan),
           ),
         ],
       ),
@@ -156,10 +160,16 @@ class _ActivePolicyView extends StatelessWidget {
   }
 
   List<String> _getTriggers(String tier) {
+    final rain = AppConstants.disruptionLabels['heavy_rain']!;
+    final heat = AppConstants.disruptionLabels['extreme_heat']!;
+    final aqi = AppConstants.disruptionLabels['aqi_spike']!;
+    final traffic = AppConstants.disruptionLabels['traffic_disruption']!;
+    final civic = AppConstants.disruptionLabels['civic_emergency']!;
+
     switch (tier) {
-      case 'basic': return ['🌧️ Heavy Rain'];
-      case 'smart': return ['🌧️ Heavy Rain', '🌡️ Extreme Heat', '🏭 AQI Spike'];
-      case 'pro': return ['🌧️ Heavy Rain', '🌡️ Extreme Heat', '🏭 AQI Spike', '🚧 Traffic', '🚨 Emergency'];
+      case 'basic': return [rain];
+      case 'smart': return [rain, heat, aqi];
+      case 'pro': return [rain, heat, aqi, traffic, civic];
       default: return [];
     }
   }

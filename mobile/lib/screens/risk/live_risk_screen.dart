@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:susanoo/providers/app_providers.dart';
+import 'package:susanoo/providers/locale_provider.dart';
 import 'package:susanoo/theme/app_theme.dart';
 import 'package:susanoo/utils/constants.dart';
 
@@ -11,11 +12,12 @@ class LiveRiskScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final riskAsync = ref.watch(liveRiskProvider);
+    final s = ref.watch(stringsProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
-        title: const Text('⚡ Live Risk', style: TextStyle(fontWeight: FontWeight.w800)),
+        title: Text('⚡ ${s.liveRisk}', style: const TextStyle(fontWeight: FontWeight.w800)),
         backgroundColor: Colors.white,
         actions: [
           IconButton(
@@ -57,6 +59,7 @@ class _RiskBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(stringsProvider);
     final worker = data['worker'] as Map<String, dynamic>? ?? {};
     final disruptions = data['active_disruptions'] as List<dynamic>? ?? [];
     final riskScore = (worker['risk_score'] as num?)?.toDouble() ?? 0.0;
@@ -94,8 +97,8 @@ class _RiskBody extends ConsumerWidget {
             const SizedBox(height: 20),
 
             if (uniqueDisruptions.isNotEmpty) ...[
-              const Text('Active Risk Factors',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              Text(s.activeRiskFactors,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               const SizedBox(height: 10),
               ...uniqueDisruptions
                   .map((d) => _DisruptionRiskTile(disruption: d)),
@@ -116,6 +119,7 @@ class _LiveWeatherCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final weatherAsync = ref.watch(liveWeatherProvider);
+    final s = ref.watch(stringsProvider);
 
     return weatherAsync.when(
       loading: () => Container(
@@ -125,11 +129,11 @@ class _LiveWeatherCard extends ConsumerWidget {
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: AppTheme.divider, width: 0.5),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-            SizedBox(width: 12),
-            Text('Fetching live weather...', style: TextStyle(color: AppTheme.textSecondary)),
+            const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+            const SizedBox(width: 12),
+            Text(s.fetchingLiveWeather, style: const TextStyle(color: AppTheme.textSecondary)),
           ],
         ),
       ),
@@ -156,12 +160,12 @@ class _LiveWeatherCard extends ConsumerWidget {
         final aqiLabel = aqi == null
             ? '—'
             : aqi > 300
-                ? 'Very Poor'
+                ? s.veryPoor
                 : aqi > 200
-                    ? 'Poor'
+                    ? s.poor
                     : aqi > 100
-                        ? 'Moderate'
-                        : 'Good';
+                        ? s.moderate
+                        : s.good;
 
         return Container(
           padding: const EdgeInsets.all(20),
@@ -181,7 +185,7 @@ class _LiveWeatherCard extends ConsumerWidget {
                   const Icon(Icons.location_on_rounded, color: Colors.white70, size: 14),
                   const SizedBox(width: 4),
                   Text(
-                    cityName.isNotEmpty ? cityName : 'Your Location',
+                    cityName.isNotEmpty ? cityName : s.city,
                     style: const TextStyle(color: Colors.white70, fontSize: 13),
                   ),
                   const Spacer(),
@@ -229,12 +233,12 @@ class _LiveWeatherCard extends ConsumerWidget {
               // Stats row
               Row(
                 children: [
-                  _WeatherStat(icon: Icons.water_drop_rounded, label: 'Humidity', value: humidity != null ? '$humidity%' : '--'),
-                  _WeatherStat(icon: Icons.air_rounded, label: 'Wind', value: wind != null ? '${wind.toInt()} km/h' : '--'),
+                  _WeatherStat(icon: Icons.water_drop_rounded, label: s.humidity, value: humidity != null ? '$humidity%' : '--'),
+                  _WeatherStat(icon: Icons.air_rounded, label: s.wind, value: wind != null ? '${wind.toInt()} km/h' : '--'),
                   if (rainfall > 0)
-                    _WeatherStat(icon: Icons.umbrella_rounded, label: 'Rain', value: '${rainfall.toStringAsFixed(1)} mm/h'),
+                    _WeatherStat(icon: Icons.umbrella_rounded, label: s.rain, value: '${rainfall.toStringAsFixed(1)} mm/h'),
                   if (visibility != null)
-                    _WeatherStat(icon: Icons.visibility_rounded, label: 'Visibility', value: '${visibility} km'),
+                    _WeatherStat(icon: Icons.visibility_rounded, label: s.visibility, value: '${visibility} km'),
                 ],
               ),
               const SizedBox(height: 12),
@@ -340,17 +344,18 @@ class _RiskGaugeState extends State<_RiskGauge>
     return AppTheme.danger;
   }
 
-  String _labelFor(double v) {
-    if (v < 0.35) return 'LOW RISK';
-    if (v < 0.65) return 'MODERATE RISK';
-    return 'HIGH RISK';
+  String _labelFor(double v, dynamic s) {
+    if (v < 0.35) return s.lowRisk;
+    if (v < 0.65) return s.moderateRisk;
+    return s.highRisk;
   }
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _anim,
-      builder: (_, __) {
+      builder: (context, __) {
+        final s = ProviderScope.containerOf(context).read(stringsProvider);
         final v = _anim.value;
         final color = _colorFor(v);
         return Container(
@@ -367,8 +372,8 @@ class _RiskGaugeState extends State<_RiskGauge>
           ),
           child: Column(
             children: [
-              const Text('Risk Probability',
-                  style: TextStyle(
+              Text(s.riskProbability,
+                  style: const TextStyle(
                       fontSize: 13,
                       color: AppTheme.textSecondary,
                       fontWeight: FontWeight.w600)),
@@ -394,7 +399,7 @@ class _RiskGaugeState extends State<_RiskGauge>
                             color: color.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: Text(_labelFor(v),
+                          child: Text(_labelFor(v, s),
                               style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w800,
@@ -457,14 +462,15 @@ class _GaugePainter extends CustomPainter {
 }
 
 // ── Risk Factor Breakdown ──────────────────────────────────────────────────────
-class _RiskFactorCard extends StatelessWidget {
+class _RiskFactorCard extends ConsumerWidget {
   final double riskScore;
   final List<Map<String, dynamic>> disruptions;
   const _RiskFactorCard(
       {required this.riskScore, required this.disruptions});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(stringsProvider);
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -475,11 +481,11 @@ class _RiskFactorCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Risk Factor Breakdown',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+          Text(s.riskFactorBreakdown,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
           const SizedBox(height: 16),
           _FactorRow(
-            label: 'Personal Risk Score',
+            label: s.personalRiskScore,
             value: riskScore,
             icon: Icons.person_rounded,
             color: AppTheme.primary,
@@ -672,12 +678,13 @@ class _DisruptionRiskTile extends StatelessWidget {
 }
 
 // ── Advice Card ────────────────────────────────────────────────────────────────
-class _RiskAdviceCard extends StatelessWidget {
+class _RiskAdviceCard extends ConsumerWidget {
   final double probability;
   const _RiskAdviceCard({required this.probability});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(stringsProvider);
     final isHigh = probability >= 0.65;
     final isMid = probability >= 0.35;
     final color =
@@ -687,11 +694,13 @@ class _RiskAdviceCard extends StatelessWidget {
         : isMid
             ? Icons.info_rounded
             : Icons.check_circle_rounded;
+    
     final title = isHigh
-        ? 'High Risk — Consider Filing a Claim'
+        ? '${s.highRisk} — Consider Filing a Claim'
         : isMid
-            ? 'Moderate Risk — Stay Alert'
-            : 'Low Risk — You\'re Good!';
+            ? '${s.moderateRisk} — Stay Alert'
+            : '${s.lowRisk} — You\'re Good!';
+    
     final body = isHigh
         ? 'Active disruptions are significantly impacting your delivery zone. If you have an active policy, your claim may be auto-triggered.'
         : isMid

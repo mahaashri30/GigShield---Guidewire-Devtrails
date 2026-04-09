@@ -43,6 +43,17 @@ def active_hours_ratio(event_started_at: datetime) -> float:
     return round(remaining / total_active, 2)
 
 
+import math
+
+def haversine(lat1, lon1, lat2, lon2):
+    """Calculate distance in km between two points."""
+    R = 6371  # Earth radius in km
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
 @router.post("/trigger/{disruption_event_id}", response_model=ClaimResponse)
 async def trigger_claim(
     disruption_event_id: str,
@@ -51,20 +62,23 @@ async def trigger_claim(
 ):
     now = datetime.now(timezone.utc)
 
-    # Get active policy
+    # Get active policy with row-level locking to prevent race conditions
     result = await db.execute(
         select(Policy).where(
             Policy.worker_id == current_worker.id,
             Policy.status == PolicyStatus.ACTIVE,
         ).order_by(Policy.created_at.desc())
+        .with_for_update()
     )
     policy = result.scalars().first()
     if not policy:
         raise HTTPException(status_code=400, detail="No active policy found")
-    # Handle timezone-naive end_date from DB
+    
+    # Ensure policy end_date is timezone-aware
     end_date = policy.end_date
     if end_date.tzinfo is None:
         end_date = end_date.replace(tzinfo=timezone.utc)
+        
     if end_date < now:
         policy.status = PolicyStatus.EXPIRED
         await db.commit()
@@ -79,27 +93,54 @@ async def trigger_claim(
     if event.city.lower() != current_worker.city.lower():
         raise HTTPException(status_code=400, detail="Disruption event is not in your city")
 
-    # City pool check: trigger must be valid for worker's city pool
+    # City pool check
     allowed_types = CITY_POOLS.get(current_worker.city, list(DisruptionType))
     if event.disruption_type not in allowed_types:
         raise HTTPException(status_code=400, detail=f"{event.disruption_type} is not covered in {current_worker.city} pool")
 
-    # Active hours check: trigger must be during worker's active hours (6am-10pm IST)
+    # Active hours check
     event_started_at = event.started_at
     if event_started_at.tzinfo is None:
         event_started_at = event_started_at.replace(tzinfo=timezone.utc)
+    
     hours_ratio = active_hours_ratio(event_started_at)
     if hours_ratio == 0.0:
         raise HTTPException(status_code=400, detail="Disruption occurred outside active delivery hours (6am-10pm)")
 
-    # Ward-level check: pincode prefix must match (same zone, not just same city)
+    # ── Dark Store Proximity / Ward-level check ─────────────────────────────
     worker_prefix = current_worker.pincode[:3] if current_worker.pincode else ""
     event_prefix = (event.pincode or "")[:3]
-    if event_prefix and worker_prefix and worker_prefix != event_prefix:
-        # Allow if within same city but different ward — reduce payout by 30%
-        ward_mismatch = True
+    
+    # Base proximity factor
+    proximity_factor = 1.0
+    
+    # From app.models.models import WorkerLocationPing
+    from app.models.models import WorkerLocationPing
+    
+    # Use GPS coordinates if available for precise proximity
+    last_ping_result = await db.execute(
+        select(WorkerLocationPing).where(
+            WorkerLocationPing.worker_id == current_worker.id,
+        ).order_by(WorkerLocationPing.recorded_at.desc()).limit(1)
+    )
+    last_ping = last_ping_result.scalar_one_or_none()
+    
+    if last_ping and event.lat and event.lng:
+        distance = haversine(last_ping.lat, last_ping.lng, event.lat, event.lng)
+        # Radius check: if outside 10km, reduce payout significantly
+        # If within radius_km, full payout. If between radius and 2*radius, partial.
+        radius = event.radius_km or 5.0
+        if distance <= radius:
+            proximity_factor = 1.0
+        elif distance <= radius * 2:
+            proximity_factor = 0.7
+        else:
+            proximity_factor = 0.4
+    elif event_prefix and worker_prefix and worker_prefix != event_prefix:
+        # Fallback to pincode ward check if GPS not available
+        proximity_factor = 0.7
     else:
-        ward_mismatch = False
+        proximity_factor = 1.0
 
     # Duplicate claim check
     dup = await db.execute(
@@ -111,7 +152,7 @@ async def trigger_claim(
     if dup.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Already claimed this disruption event")
 
-    # Claims this week (for fraud scoring)
+    # Claims this week
     week_ago = now - timedelta(days=7)
     count_result = await db.execute(
         select(func.count(Claim.id)).where(
@@ -121,9 +162,7 @@ async def trigger_claim(
     )
     claims_this_week = count_result.scalar() or 0
 
-    # Fraud detection — include GPS location data
-    from app.models.models import WorkerLocationPing
-    # Check for suspicious GPS pings in last 30 min
+    # Fraud detection (re-uses last_ping if fetched)
     ping_cutoff = now - timedelta(minutes=30)
     suspicious_result = await db.execute(
         select(WorkerLocationPing).where(
@@ -133,14 +172,6 @@ async def trigger_claim(
         ).limit(1)
     )
     had_suspicious_ping = suspicious_result.scalar_one_or_none() is not None
-
-    # Get last known city from GPS
-    last_ping_result = await db.execute(
-        select(WorkerLocationPing).where(
-            WorkerLocationPing.worker_id == current_worker.id,
-        ).order_by(WorkerLocationPing.recorded_at.desc()).limit(1)
-    )
-    last_ping = last_ping_result.scalar_one_or_none()
     last_known_city = last_ping.city_detected if last_ping else ""
 
     fraud_result = calculate_fraud_score(
@@ -153,20 +184,22 @@ async def trigger_claim(
         claims_same_event=0,
         event_started_at=event_started_at,
         claim_created_at=now,
+        disruption_type=event.disruption_type,
         last_known_city=last_known_city,
         had_suspicious_ping=had_suspicious_ping,
+        active_hours_ratio=hours_ratio,
+        claim_amount_ratio=1.0, 
     )
 
-    # Weekly cap remaining = tier weekly cap - total already claimed this policy week
-    weekly_cap     = MAX_WEEKLY_PAYOUT[policy.tier]
+    # Cap management
+    weekly_cap = MAX_WEEKLY_PAYOUT[policy.tier]
     weekly_claimed = float(policy.total_claimed or 0)
     weekly_remaining = max(0.0, weekly_cap - weekly_claimed)
 
     if weekly_remaining <= 0:
         raise HTTPException(status_code=400, detail="Weekly payout cap reached for this policy")
 
-    # Daily cap remaining
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     today_result = await db.execute(
         select(func.coalesce(func.sum(Claim.approved_amount), 0.0)).where(
             Claim.worker_id == current_worker.id,
@@ -176,18 +209,17 @@ async def trigger_claim(
     )
     claimed_today = float(today_result.scalar() or 0)
 
-    # Effective cap = min(daily remaining, weekly remaining)
-    daily_cap       = MAX_DAILY_PAYOUT[policy.tier]
+    daily_cap = MAX_DAILY_PAYOUT[policy.tier]
     daily_remaining = max(0.0, daily_cap - claimed_today)
-    effective_cap   = min(daily_remaining, weekly_remaining)
+    effective_cap = min(daily_remaining, weekly_remaining)
 
-    # Payout = income shortfall adjusted for active hours ratio and ward proximity
-    effective_hours_ratio = hours_ratio * (0.7 if ward_mismatch else 1.0)
+    effective_hours_ratio = hours_ratio * proximity_factor
     payout_data = calculate_payout(
         worker_daily_avg=current_worker.avg_daily_earnings,
         dss_multiplier=event.dss_multiplier,
         active_hours_ratio=effective_hours_ratio,
         tier=policy.tier,
+        existing_claimed_today=claimed_today,
     )
 
     claim = Claim(
@@ -205,8 +237,7 @@ async def trigger_claim(
     )
 
     if fraud_result["auto_approve"]:
-        income_shortfall = payout_data.get("income_shortfall") or payout_data.get("approved_amount") or payout_data.get("raw_payout") or 0.0
-        approved = min(income_shortfall, effective_cap)
+        approved = min(payout_data["approved_amount"], effective_cap)
         claim.status = ClaimStatus.APPROVED
         claim.approved_amount = round(approved, 2)
         claim.processed_at = now
@@ -219,6 +250,7 @@ async def trigger_claim(
         claim.processed_at = now
 
     db.add(claim)
+    # Commit here to release the lock on the policy row
     await db.commit()
     await db.refresh(claim)
 

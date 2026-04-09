@@ -37,7 +37,7 @@ class ShellScreen extends ConsumerWidget {
                 _NavItem(icon: Icons.home_rounded, label: s.home, active: idx == 0, onTap: () => context.go('/home')),
                 _NavItem(icon: Icons.shield_rounded, label: s.policy, active: idx == 1, onTap: () => context.go('/policy')),
                 _NavItem(icon: Icons.receipt_long_rounded, label: s.claims, active: idx == 2, onTap: () => context.go('/claims')),
-                _NavItem(icon: Icons.monitor_heart_rounded, label: 'Risk', active: idx == 3, onTap: () => context.go('/risk')),
+                _NavItem(icon: Icons.monitor_heart_rounded, label: s.risk, active: idx == 3, onTap: () => context.go('/risk')),
                 _NavItem(icon: Icons.person_rounded, label: s.profile, active: idx == 4, onTap: () => context.go('/profile')),
               ],
             ),
@@ -57,30 +57,39 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? AppTheme.primaryLight : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: active ? AppTheme.primary : AppTheme.textHint, size: 24),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-                color: active ? AppTheme.primary : AppTheme.textHint,
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: active ? AppTheme.primaryLight : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: active ? AppTheme.primary : AppTheme.textHint, size: 24),
+              const SizedBox(height: 2),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                    color: active ? AppTheme.primary : AppTheme.textHint,
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

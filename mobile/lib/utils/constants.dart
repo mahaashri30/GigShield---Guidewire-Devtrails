@@ -1,12 +1,10 @@
 class AppConstants {
   // API
-  // Android emulator on Windows — 10.0.2.2 maps to your PC's localhost
-  // static const String baseUrl = 'http://10.0.2.2:8000/api/v1'; // local emulator
-  static const String baseUrl = 'https://gigshield-guidewire-devtrails.onrender.com/api/v1';
-  // Real device on same WiFi — replace with your PC's local IP:
-  // static const String baseUrl = 'http://192.168.x.x:8000/api/v1';
-  // Deployed backend:
-  // static const String baseUrl = 'https://gigshield-api.onrender.com/api/v1';
+  // Use --dart-define=BASE_URL=https://your-api.com/api/v1 to override during build
+  static const String baseUrl = String.fromEnvironment(
+    'BASE_URL',
+    defaultValue: 'https://gigshield-guidewire-devtrails.onrender.com/api/v1',
+  );
 
   // Storage Keys
   static const String accessTokenKey = 'access_token';

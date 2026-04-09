@@ -270,7 +270,8 @@ async def fetch_weather_real(city: str) -> dict:
                 timeout=5.0,
             )
             data = r.json()
-            rain = data.get("rain", {}).get("1h", 0.0) * 60
+            # OpenWeather rain.1h is mm for the last hour (mm/hr)
+            rain = data.get("rain", {}).get("1h", 0.0)
             return {
                 "rainfall_mm_per_hr": rain,
                 "temperature_c": data["main"]["temp"],
@@ -281,11 +282,18 @@ async def fetch_weather_real(city: str) -> dict:
 
 
 def classify_rain(mm_per_hr: float) -> Optional[tuple]:
-    if mm_per_hr >= 115 / 24:
-        return DisruptionSeverity.EXTREME, f"{mm_per_hr:.1f}mm/hr rainfall (Extreme)"
-    elif mm_per_hr >= 64.5:
+    """
+    Classify rainfall based on intensity (mm/hr).
+    IMD thresholds for intensity:
+    - Moderate: 7.6 to 35.5 mm/hr
+    - Heavy: 35.6 to 64.5 mm/hr
+    - Extremely Heavy: > 64.5 mm/hr
+    """
+    if mm_per_hr > 64.5:
+        return DisruptionSeverity.EXTREME, f"{mm_per_hr:.1f}mm/hr rainfall (Extremely Heavy)"
+    elif mm_per_hr >= 35.6:
         return DisruptionSeverity.SEVERE, f"{mm_per_hr:.1f}mm/hr rainfall (Heavy)"
-    elif mm_per_hr >= 35:
+    elif mm_per_hr >= 7.6:
         return DisruptionSeverity.MODERATE, f"{mm_per_hr:.1f}mm/hr rainfall (Moderate)"
     return None
 
