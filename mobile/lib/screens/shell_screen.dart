@@ -10,7 +10,8 @@ class ShellScreen extends StatelessWidget {
     final loc = GoRouterState.of(context).matchedLocation;
     if (loc.startsWith('/policy')) return 1;
     if (loc.startsWith('/claims')) return 2;
-    if (loc.startsWith('/profile')) return 3;
+    if (loc.startsWith('/risk'))   return 3;
+    if (loc.startsWith('/profile')) return 4;
     return 0;
   }
 
@@ -33,7 +34,8 @@ class ShellScreen extends StatelessWidget {
                 _NavItem(icon: Icons.home_rounded, label: 'Home', active: idx == 0, onTap: () => context.go('/home')),
                 _NavItem(icon: Icons.shield_rounded, label: 'Policy', active: idx == 1, onTap: () => context.go('/policy')),
                 _NavItem(icon: Icons.receipt_long_rounded, label: 'Claims', active: idx == 2, onTap: () => context.go('/claims')),
-                _NavItem(icon: Icons.person_rounded, label: 'Profile', active: idx == 3, onTap: () => context.go('/profile')),
+                _NavItem(icon: Icons.monitor_heart_rounded, label: 'Risk', active: idx == 3, onTap: () => context.go('/risk')),
+                _NavItem(icon: Icons.person_rounded, label: 'Profile', active: idx == 4, onTap: () => context.go('/profile')),
               ],
             ),
           ),

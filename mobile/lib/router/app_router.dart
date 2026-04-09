@@ -12,6 +12,7 @@ import 'package:susanoo/screens/policy/policy_screen.dart';
 import 'package:susanoo/screens/policy/buy_policy_screen.dart';
 import 'package:susanoo/screens/claims/claims_screen.dart';
 import 'package:susanoo/screens/profile/profile_screen.dart';
+import 'package:susanoo/screens/risk/live_risk_screen.dart';
 import 'package:susanoo/screens/shell_screen.dart';
 
 // Bridges Riverpod state changes into a Listenable that GoRouter can watch
@@ -79,6 +80,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/policy', builder: (_, __) => const PolicyScreen()),
           GoRoute(path: '/policy/buy', builder: (_, __) => const BuyPolicyScreen()),
           GoRoute(path: '/claims', builder: (_, __) => const ClaimsScreen()),
+          GoRoute(path: '/risk', builder: (_, __) => const LiveRiskScreen()),
           GoRoute(path: '/profile', builder: (_, __) => const ProfileScreen()),
         ],
       ),

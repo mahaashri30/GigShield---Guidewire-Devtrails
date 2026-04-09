@@ -122,6 +122,65 @@ async def location_ping(
     }
 
 
+@router.get("/weather")
+async def get_weather_by_location(
+    lat: float,
+    lon: float,
+    current_worker: Worker = Depends(get_current_worker),
+):
+    """
+    Fetch live weather + AQI for given lat/lon using OpenWeatherMap.
+    Called from Flutter Live Risk screen using the worker's GPS coordinates.
+    """
+    import httpx
+    from app.config import settings
+
+    api_key = settings.OPENWEATHER_API_KEY
+    result = {"lat": lat, "lon": lon}
+
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        # Current weather by coordinates
+        try:
+            wr = await client.get(
+                "https://api.openweathermap.org/data/2.5/weather",
+                params={"lat": lat, "lon": lon, "appid": api_key, "units": "metric"},
+            )
+            wd = wr.json()
+            result["temperature_c"] = wd["main"]["temp"]
+            result["feels_like_c"] = wd["main"]["feels_like"]
+            result["humidity"] = wd["main"]["humidity"]
+            result["wind_kmh"] = round(wd["wind"]["speed"] * 3.6, 1)
+            result["description"] = wd["weather"][0]["description"].title()
+            result["icon"] = wd["weather"][0]["icon"]
+            result["city_name"] = wd.get("name", "")
+            result["rainfall_mm_per_hr"] = wd.get("rain", {}).get("1h", 0.0)
+            result["visibility_km"] = round(wd.get("visibility", 10000) / 1000, 1)
+        except Exception as e:
+            result["weather_error"] = str(e)
+
+        # AQI by coordinates
+        try:
+            ar = await client.get(
+                "http://api.openweathermap.org/data/2.5/air_pollution",
+                params={"lat": lat, "lon": lon, "appid": api_key},
+            )
+            ad = ar.json()
+            ow_aqi = ad["list"][0]["main"]["aqi"]
+            components = ad["list"][0]["components"]
+            # Convert OpenWeather 1-5 AQI to India AQI scale
+            aqi_map = {1: 50, 2: 100, 3: 200, 4: 300, 5: 400}
+            result["aqi"] = aqi_map.get(ow_aqi, 100)
+            result["aqi_level"] = ow_aqi
+            result["pm2_5"] = round(components.get("pm2_5", 0), 1)
+            result["pm10"] = round(components.get("pm10", 0), 1)
+            result["no2"] = round(components.get("no2", 0), 1)
+            result["co"] = round(components.get("co", 0), 1)
+        except Exception as e:
+            result["aqi_error"] = str(e)
+
+    return result
+
+
 @router.get("/history")
 async def location_history(
     db: AsyncSession = Depends(get_db),

@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:susanoo/services/api_service.dart';
 import 'package:susanoo/services/location_service.dart';
 
@@ -73,7 +74,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
         res['worker_id'],
       );
       final isNew = res['is_new_user'] ?? false;
-      // For new users, don't set isLoggedIn yet — wait until registration completes
       state = state.copyWith(
         isLoggedIn: !isNew,
         isNewUser: isNew,
@@ -161,3 +161,45 @@ final devModeProvider = StateProvider<bool>((ref) => false);
 // ── Selected tier for policy purchase ─────────────────────────────────────────
 
 final selectedTierProvider = StateProvider<String>((ref) => 'smart');
+
+// ── Live Risk Assessment ───────────────────────────────────────────────────────
+
+final liveRiskProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+  final api = ref.watch(apiServiceProvider);
+  try {
+    return await api.getRiskAssessment();
+  } on Exception catch (e) {
+    if (e.toString().contains('401') || e.toString().contains('deleteAll')) {
+      ref.read(authProvider.notifier).forceLogout();
+    }
+    rethrow;
+  }
+});
+
+// ── Live Weather by GPS ────────────────────────────────────────────────────────
+
+final liveWeatherProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+  final api = ref.watch(apiServiceProvider);
+
+  double? lat, lon;
+
+  // Prefer worker's last known location stored by the backend
+  final riskData = ref.watch(liveRiskProvider).valueOrNull;
+  if (riskData != null) {
+    final worker = riskData['worker'] as Map<String, dynamic>? ?? {};
+    lat = (worker['last_known_lat'] as num?)?.toDouble();
+    lon = (worker['last_known_lng'] as num?)?.toDouble();
+  }
+
+  // Fall back to live GPS if no stored location yet
+  if (lat == null || lon == null) {
+    final pos = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.medium,
+      timeLimit: const Duration(seconds: 8),
+    );
+    lat = pos.latitude;
+    lon = pos.longitude;
+  }
+
+  return api.getWeatherByLocation(lat!, lon!);
+});

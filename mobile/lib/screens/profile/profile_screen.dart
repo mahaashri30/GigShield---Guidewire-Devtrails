@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:susanoo/l10n/app_strings.dart';
+import 'package:susanoo/providers/locale_provider.dart';
 import 'package:susanoo/theme/app_theme.dart';
 import 'package:susanoo/providers/app_providers.dart';
 
@@ -13,11 +15,12 @@ class ProfileScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: AppTheme.surface,
-      appBar: AppBar(title: const Text('Profile'), backgroundColor: Colors.white),
+      appBar: AppBar(title: Text(ref.watch(stringsProvider).profile), backgroundColor: Colors.white),
       body: dashAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (data) {
+          final s = ref.watch(stringsProvider);
           final worker = data['worker'] as Map<String, dynamic>? ?? {};
           final name = worker['name'] as String? ?? 'Rider';
           final phone = worker['phone'] as String? ?? '';
@@ -31,14 +34,10 @@ class ProfileScreen extends ConsumerWidget {
             padding: const EdgeInsets.all(20),
             child: Column(
               children: [
-                // Avatar
                 Container(
                   width: 80,
                   height: 80,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryLight,
-                    shape: BoxShape.circle,
-                  ),
+                  decoration: const BoxDecoration(color: AppTheme.primaryLight, shape: BoxShape.circle),
                   child: Center(
                     child: Text(
                       name.isNotEmpty ? name[0].toUpperCase() : 'R',
@@ -51,19 +50,22 @@ class ProfileScreen extends ConsumerWidget {
                 Text('$platform • $city', style: const TextStyle(color: AppTheme.textSecondary)),
                 const SizedBox(height: 24),
 
-                // Info section
-                _Section(title: 'Account Details', tiles: [
-                  _Tile(icon: Icons.phone, label: 'Mobile', value: phone),
-                  _Tile(icon: Icons.account_balance_wallet_outlined, label: 'UPI ID', value: upi),
-                  _Tile(icon: Icons.location_city, label: 'City', value: city),
+                _Section(title: s.accountDetails, tiles: [
+                  _Tile(icon: Icons.phone, label: s.mobile, value: phone),
+                  _Tile(icon: Icons.account_balance_wallet_outlined, label: s.upiId, value: upi),
+                  _Tile(icon: Icons.location_city, label: s.city, value: city),
                 ]),
 
                 const SizedBox(height: 16),
 
-                _Section(title: 'Risk Profile', tiles: [
-                  _Tile(icon: Icons.bar_chart, label: 'Avg Daily Earnings', value: '₹$avgEarnings'),
-                  _Tile(icon: Icons.security, label: 'Risk Score', value: '${riskScore.toInt()}/100'),
+                _Section(title: s.riskProfile, tiles: [
+                  _Tile(icon: Icons.bar_chart, label: s.avgDailyEarnings, value: '₹$avgEarnings'),
+                  _Tile(icon: Icons.security, label: s.riskScore, value: '${riskScore.toInt()}/100'),
                 ]),
+
+                const SizedBox(height: 16),
+
+                _LanguageSwitcher(),
 
                 const SizedBox(height: 24),
 
@@ -73,7 +75,7 @@ class ProfileScreen extends ConsumerWidget {
                     if (context.mounted) context.go('/auth/phone');
                   },
                   icon: const Icon(Icons.logout, color: AppTheme.danger),
-                  label: const Text('Logout', style: TextStyle(color: AppTheme.danger)),
+                  label: Text(s.logout, style: const TextStyle(color: AppTheme.danger)),
                   style: OutlinedButton.styleFrom(side: const BorderSide(color: AppTheme.danger)),
                 ),
               ],
@@ -81,6 +83,57 @@ class ProfileScreen extends ConsumerWidget {
           );
         },
       ),
+    );
+  }
+}
+
+class _LanguageSwitcher extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(stringsProvider);
+    final currentLang = ref.watch(localeProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(s.language, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppTheme.divider, width: 0.5),
+          ),
+          child: Column(
+            children: AppStrings.all.entries.map((entry) {
+              final isSelected = entry.key == currentLang;
+              return InkWell(
+                onTap: () => ref.read(localeProvider.notifier).setLanguage(entry.key),
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.language, size: 20, color: AppTheme.textSecondary),
+                      const SizedBox(width: 12),
+                      Text(
+                        entry.value.languageName,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal,
+                          color: isSelected ? AppTheme.primary : AppTheme.textSecondary,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (isSelected)
+                        const Icon(Icons.check_circle_rounded, color: AppTheme.primary, size: 20),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
     );
   }
 }

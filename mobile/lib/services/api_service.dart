@@ -193,4 +193,14 @@ class ApiService {
     });
     return res.data;
   }
+
+  Future<Map<String, dynamic>> getRiskAssessment() async {
+    final res = await _dio.get('/workers/dashboard');
+    return res.data;
+  }
+
+  Future<Map<String, dynamic>> getWeatherByLocation(double lat, double lon) async {
+    final res = await _dio.get('/location/weather', queryParameters: {'lat': lat, 'lon': lon});
+    return res.data;
+  }
 }

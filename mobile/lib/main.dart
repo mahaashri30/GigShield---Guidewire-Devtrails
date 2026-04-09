@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:susanoo/providers/locale_provider.dart';
 import 'package:susanoo/router/app_router.dart';
 import 'package:susanoo/theme/app_theme.dart';
 
@@ -23,27 +25,29 @@ class SusanooApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
+    final locale = ref.watch(localeMaterialProvider);
     return MaterialApp.router(
       title: 'Susanoo',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
+      locale: locale,
       routerConfig: router,
       builder: (context, child) => _LocationPermissionWrapper(child: child!),
     );
   }
 }
 
-class _LocationPermissionWrapper extends StatefulWidget {
+class _LocationPermissionWrapper extends ConsumerStatefulWidget {
   final Widget child;
   const _LocationPermissionWrapper({required this.child});
 
   @override
-  State<_LocationPermissionWrapper> createState() => _LocationPermissionWrapperState();
+  ConsumerState<_LocationPermissionWrapper> createState() =>
+      _LocationPermissionWrapperState();
 }
 
-class _LocationPermissionWrapperState extends State<_LocationPermissionWrapper> {
-  bool _checked = false;
-
+class _LocationPermissionWrapperState
+    extends ConsumerState<_LocationPermissionWrapper> {
   @override
   void initState() {
     super.initState();
@@ -51,23 +55,20 @@ class _LocationPermissionWrapperState extends State<_LocationPermissionWrapper> 
   }
 
   Future<void> _checkPermission() async {
-    final status = await Permission.locationWhenInUse.status;
-    // Show our custom dialog if not granted OR if denied (but not permanently)
-    if (!status.isGranted && mounted) {
-      await Future.delayed(const Duration(milliseconds: 800));
-      if (mounted) {
-        if (status.isPermanentlyDenied) {
-          // Guide user to settings
-          _showSettingsDialog();
-        } else {
-          _showPermissionDialog();
-        }
-      }
+    final permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.always ||
+        permission == LocationPermission.whileInUse) return;
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+    if (permission == LocationPermission.deniedForever) {
+      _showSettingsDialog();
+    } else {
+      _showPermissionDialog();
     }
-    setState(() => _checked = true);
   }
 
   void _showSettingsDialog() {
+    final s = ref.read(stringsProvider);
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -78,13 +79,29 @@ class _LocationPermissionWrapperState extends State<_LocationPermissionWrapper> 
           children: [
             const Icon(Icons.location_off_rounded, color: AppTheme.warning, size: 48),
             const SizedBox(height: 16),
-            const Text('Location Access Needed', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800), textAlign: TextAlign.center),
+            Text(s.locationNeeded,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                textAlign: TextAlign.center),
             const SizedBox(height: 12),
-            const Text('Please enable location in Settings to allow Susanoo to detect disruptions in your delivery zone.', style: TextStyle(fontSize: 14, color: AppTheme.textSecondary, height: 1.5), textAlign: TextAlign.center),
+            Text(s.locationNeededDesc,
+                style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary, height: 1.5),
+                textAlign: TextAlign.center),
             const SizedBox(height: 24),
-            SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () { Navigator.pop(context); openAppSettings(); }, child: const Text('Open Settings'))),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () { Navigator.pop(context); openAppSettings(); },
+                child: Text(s.openSettings),
+              ),
+            ),
             const SizedBox(height: 8),
-            SizedBox(width: double.infinity, child: TextButton(onPressed: () => Navigator.pop(context), child: const Text('Not Now', style: TextStyle(color: AppTheme.textSecondary)))),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(s.notNow, style: const TextStyle(color: AppTheme.textSecondary)),
+              ),
+            ),
           ],
         ),
       ),
@@ -92,6 +109,7 @@ class _LocationPermissionWrapperState extends State<_LocationPermissionWrapper> 
   }
 
   void _showPermissionDialog() {
+    final s = ref.read(stringsProvider);
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -103,24 +121,17 @@ class _LocationPermissionWrapperState extends State<_LocationPermissionWrapper> 
           children: [
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryLight,
-                shape: BoxShape.circle,
-              ),
+              decoration: const BoxDecoration(color: AppTheme.primaryLight, shape: BoxShape.circle),
               child: const Icon(Icons.location_on_rounded, color: AppTheme.primary, size: 36),
             ),
             const SizedBox(height: 20),
-            const Text(
-              'Allow Location Access',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-              textAlign: TextAlign.center,
-            ),
+            Text(s.allowLocation,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                textAlign: TextAlign.center),
             const SizedBox(height: 12),
-            const Text(
-              'Susanoo uses your location to detect disruptions in your delivery zone and auto-trigger claims when weather or civic events affect your area.',
-              style: TextStyle(fontSize: 14, color: AppTheme.textSecondary, height: 1.5),
-              textAlign: TextAlign.center,
-            ),
+            Text(s.allowLocationDesc,
+                style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary, height: 1.5),
+                textAlign: TextAlign.center),
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.all(10),
@@ -129,15 +140,13 @@ class _LocationPermissionWrapperState extends State<_LocationPermissionWrapper> 
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: const Color(0xFFFFE082)),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFFF59E0B)),
-                  SizedBox(width: 6),
+                  const Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFFF59E0B)),
+                  const SizedBox(width: 6),
                   Expanded(
-                    child: Text(
-                      'You can change this anytime in Settings.',
-                      style: TextStyle(fontSize: 11, color: Color(0xFF78350F)),
-                    ),
+                    child: Text(s.changeAnytime,
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF78350F))),
                   ),
                 ],
               ),
@@ -148,18 +157,19 @@ class _LocationPermissionWrapperState extends State<_LocationPermissionWrapper> 
               child: ElevatedButton(
                 onPressed: () async {
                   Navigator.pop(context);
-                  final result = await Permission.locationWhenInUse.request();
-                  if (!result.isGranted && mounted) {
-                    // If still denied after system dialog, show settings option
+                  final result = await Geolocator.requestPermission();
+                  if ((result == LocationPermission.denied ||
+                          result == LocationPermission.deniedForever) &&
+                      mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: const Text('Location helps detect disruptions in your zone.'),
-                        action: SnackBarAction(label: 'Settings', onPressed: openAppSettings),
+                        content: Text(s.allowLocationDesc),
+                        action: SnackBarAction(label: s.openSettings, onPressed: openAppSettings),
                       ),
                     );
                   }
                 },
-                child: const Text('Allow Location'),
+                child: Text(s.allowLocationBtn),
               ),
             ),
             const SizedBox(height: 8),
@@ -167,10 +177,7 @@ class _LocationPermissionWrapperState extends State<_LocationPermissionWrapper> 
               width: double.infinity,
               child: TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text(
-                  'Not Now',
-                  style: TextStyle(color: AppTheme.textSecondary),
-                ),
+                child: Text(s.notNow, style: const TextStyle(color: AppTheme.textSecondary)),
               ),
             ),
           ],
