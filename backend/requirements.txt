@@ -22,3 +22,16 @@ joblib>=1.4.2
 pytz>=2024.1
 razorpay>=1.4.2
 google-auth>=2.29.0
+
+# Face Recognition & Biometric Verification
+face-recognition>=1.3.5
+mtcnn>=0.1.1
+opencv-python>=4.8.0
+
+# Document OCR & Extraction
+pytesseract>=0.3.10
+pillow>=10.0.0
+
+# AI-powered field extraction
+google-generativeai>=0.3.0
+

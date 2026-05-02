@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from sqlalchemy import text
 import traceback
 
-from app.api import auth, workers, policies, claims, payouts, disruptions, actuarial, admin, location, notifications
+from app.api import auth, workers, policies, claims, payouts, disruptions, actuarial, admin, location, notifications, verification
 from app.database import engine, Base
 from app.config import settings
 
@@ -72,6 +72,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
+app.include_router(verification.router, prefix="/api/v1/verify", tags=["Verification"])
 app.include_router(workers.router, prefix="/api/v1/workers", tags=["Workers"])
 app.include_router(policies.router, prefix="/api/v1/policies", tags=["Policies"])
 app.include_router(claims.router, prefix="/api/v1/claims", tags=["Claims"])

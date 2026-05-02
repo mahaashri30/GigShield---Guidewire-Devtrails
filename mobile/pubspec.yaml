@@ -32,6 +32,12 @@ dependencies:
   firebase_core: ^3.0.0
   firebase_messaging: ^15.0.0
   flutter_local_notifications: ^21.0.0
+  # Camera & Image Processing for Verification
+  camera: ^0.11.0
+  image_picker: ^1.0.0
+  image: ^4.1.0
+  # Document scanning (optional, for govt ID auto-crop)
+  document_scanner_flutter: ^0.4.0
 
 dev_dependencies:
   flutter_test:

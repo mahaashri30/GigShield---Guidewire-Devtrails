@@ -22,6 +22,22 @@ class Platform(str, enum.Enum):
     DUNZO            = "dunzo"
 
 
+class VerificationStatus(str, enum.Enum):
+    PENDING = "pending"
+    PHONE_VERIFIED = "phone_verified"
+    PARTNER_ID_VERIFIED = "partner_id_verified"
+    SELFIE_VERIFIED = "selfie_verified"
+    GOVT_ID_VERIFIED = "govt_id_verified"
+    FULLY_VERIFIED = "fully_verified"
+
+
+class GovtIDType(str, enum.Enum):
+    DRIVING_LICENSE = "driving_license"
+    VOTER_ID = "voter_id"
+    AADHAAR = "aadhaar"
+    PAN = "pan"
+
+
 class PolicyTier(str, enum.Enum):
     BASIC = "basic"
     SMART = "smart"
@@ -88,6 +104,24 @@ class Worker(Base):
     last_known_lng = Column(Float, nullable=True)
     last_location_at = Column(DateTime(timezone=True), nullable=True)
     fcm_token = Column(String(200), nullable=True)  # Firebase push token
+    
+    # Multi-stage verification fields
+    verification_status = Column(Enum(VerificationStatus), default=VerificationStatus.PENDING, nullable=False)
+    phone_verified_at = Column(DateTime(timezone=True), nullable=True)
+    partner_id_verified_at = Column(DateTime(timezone=True), nullable=True)
+    selfie_verified_at = Column(DateTime(timezone=True), nullable=True)
+    govt_id_verified_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Biometric & ID data
+    selfie_image_url = Column(String(500), nullable=True)
+    selfie_face_embedding = Column(Text, nullable=True)  # JSON of face embedding vector
+    face_match_score = Column(Float, nullable=True)  # Cosine similarity score from face matching
+    
+    govt_id_type = Column(Enum(GovtIDType), nullable=True)
+    govt_id_image_url = Column(String(500), nullable=True)
+    govt_id_name = Column(String(100), nullable=True)  # Name extracted from govt ID via OCR
+    govt_id_number = Column(String(50), nullable=True)  # ID number from OCR
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
