@@ -36,6 +36,27 @@ async def lifespan(app: FastAPI):
                 await conn.execute(text(sql))
             except Exception:
                 pass
+                
+    # Seed Admin User
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy import select
+    from app.models.models import Admin
+    from app.services.auth_service import pwd_context
+    from app.database import SessionLocal
+    
+    async with SessionLocal() as session:
+        result = await session.execute(select(Admin).where(Admin.email == "codethetrend@gmail.com"))
+        admin = result.scalar_one_or_none()
+        if not admin:
+            new_admin = Admin(
+                email="codethetrend@gmail.com",
+                hashed_password=pwd_context.hash("admin"),
+                name="System Admin"
+            )
+            session.add(new_admin)
+            await session.commit()
+            print("[SEED] Admin user created: codethetrend@gmail.com")
+
     yield
     await engine.dispose()
 

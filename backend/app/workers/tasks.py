@@ -71,14 +71,34 @@ async def _poll_and_store_disruptions(city: str, pincode: str, db) -> list:
     """Check disruptions for a city, persist new events, return created event IDs."""
     from sqlalchemy import select
     from app.models.models import DisruptionEvent
-    from app.services.disruption_service import check_disruptions
+    from app.services.disruption_service import (
+        check_disruptions, fetch_weather_real, fetch_aqi_real, check_disruption_cleared,
+    )
+
+    now = datetime.now(timezone.utc)
+
+    # Close any active events whose sensor readings have returned to normal
+    active_result = await db.execute(
+        select(DisruptionEvent).where(
+            DisruptionEvent.city == city,
+            DisruptionEvent.is_active == True,
+        )
+    )
+    active_events = active_result.scalars().all()
+    if active_events:
+        weather = await fetch_weather_real(city)
+        aqi_data = await fetch_aqi_real(city)
+        for ev in active_events:
+            if check_disruption_cleared(ev.disruption_type, weather, aqi_data):
+                ev.is_active = False
+                ev.ended_at = now
 
     events_data = await check_disruptions(city=city, pincode=pincode)
     created_ids = []
 
     for e in events_data:
         # Deduplicate: skip if same type+city is already active within last 30 min
-        cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+        cutoff = now - timedelta(minutes=30)
         dup = await db.execute(
             select(DisruptionEvent).where(
                 DisruptionEvent.city == city,
@@ -99,7 +119,7 @@ async def _poll_and_store_disruptions(city: str, pincode: str, db) -> list:
             raw_value=e.get("raw_value"),
             description=e.get("description"),
             source=e.get("source"),
-            started_at=datetime.now(timezone.utc),
+            started_at=now,
             is_active=True,
         )
         db.add(event)
@@ -292,55 +312,8 @@ async def _do_poll_weather():
 
 
 async def _do_poll_aqi():
-    """Poll AQI for all cities — AQI disruptions are already included in check_disruptions."""
-    from app.database import AsyncSessionLocal
-    from app.services.disruption_service import fetch_aqi_mock, classify_aqi, get_dss
-    from app.models.models import DisruptionEvent, DisruptionType
-    from sqlalchemy import select
-
-    cities = await _get_cities_to_poll()
-    async with AsyncSessionLocal() as db:
-        total_events = 0
-        total_claims = 0
-        for city, pincode in cities:
-            aqi_data = await fetch_aqi_mock(city)
-            aqi_result = classify_aqi(aqi_data.get("aqi", 0))
-            if not aqi_result:
-                continue
-
-            severity, desc = aqi_result
-            cutoff = datetime.now(timezone.utc) - timedelta(minutes=60)
-            dup = await db.execute(
-                select(DisruptionEvent).where(
-                    DisruptionEvent.city == city,
-                    DisruptionEvent.disruption_type == DisruptionType.AQI_SPIKE,
-                    DisruptionEvent.is_active == True,
-                    DisruptionEvent.started_at >= cutoff,
-                )
-            )
-            if dup.scalar_one_or_none():
-                continue
-
-            event = DisruptionEvent(
-                disruption_type=DisruptionType.AQI_SPIKE,
-                severity=severity,
-                city=city,
-                pincode=pincode,
-                dss_multiplier=get_dss(DisruptionType.AQI_SPIKE, severity),
-                raw_value=float(aqi_data["aqi"]),
-                description=desc,
-                source="AQI India API",
-                started_at=datetime.now(timezone.utc),
-                is_active=True,
-            )
-            db.add(event)
-            await db.flush()
-            n = await _auto_claim_for_event(event.id, city, db)
-            total_claims += n
-            total_events += 1
-
-        await db.commit()
-        return {"new_aqi_events": total_events, "auto_claims": total_claims}
+    """AQI disruptions are handled inside check_disruptions — this task just triggers the full poll."""
+    return await _do_poll_weather()
 
 
 async def _do_expire_policies():
@@ -389,7 +362,6 @@ async def _do_daily_batch_settlement():
     )
     from app.services.premium_service import calculate_payout, MAX_DAILY_PAYOUT, MAX_WEEKLY_PAYOUT
     from app.services.fraud_service import calculate_fraud_score
-    from app.services.infra_service import get_infra_adjusted_dss
     from app.services.payout_service import initiate_upi_payout
     from app.services.notification_service import notify_claim_approved, notify_claim_paid
 
@@ -487,29 +459,13 @@ async def _do_daily_batch_settlement():
                     days=30,
                 )
 
-                adjusted_dss, infra_hours_ratio, infra_score = await get_infra_adjusted_dss(
-                    base_dss=event.dss_multiplier,
-                    city=worker.city,
-                    pincode=worker.pincode,
-                    disruption_type=event.disruption_type.value,
-                    severity=event.severity.value,
-                    activity_zone_infra=activity_infra,
-                )
                 adjusted_dss = round(min(
                     event.dss_multiplier * (0.85 + (activity_infra - 0.30) * (0.55 / 0.70)), 1.0
                 ), 3)
 
-                # How many active hours did the worker have during the disruption
-                event_ist_hour = (event.started_at.hour + 5) % 24
-                if 6 <= event_ist_hour < 22:
-                    remaining = 22 - event_ist_hour
-                    hours_ratio = round(remaining / 16.0, 2)
-                else:
-                    hours_ratio = 0.5
-
-                effective_hours_ratio = round(
-                    min(hours_ratio, infra_hours_ratio), 3
-                )
+                # Actual hours lost: ended_at - started_at clamped to 6am-10pm IST
+                from app.api.claims import active_hours_ratio
+                effective_hours_ratio = active_hours_ratio(event)
 
                 # Cap checks
                 weekly_cap = MAX_WEEKLY_PAYOUT[policy.tier]

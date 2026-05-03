@@ -375,33 +375,58 @@ def classify_aqi(aqi: int) -> Optional[tuple]:
     return None
 
 
+def check_disruption_cleared(disruption_type: DisruptionType, weather: dict, aqi: dict) -> bool:
+    """
+    Returns True if the sensor reading for this disruption type is back to normal.
+    Used by the poller to close active events and set ended_at.
+    """
+    if disruption_type == DisruptionType.HEAVY_RAIN:
+        return weather.get("rainfall_mm_per_hr", 0) < 7.6
+    elif disruption_type == DisruptionType.EXTREME_HEAT:
+        return weather.get("temperature_c", 30) < 42.0
+    elif disruption_type == DisruptionType.AQI_SPIKE:
+        return aqi.get("aqi", 0) <= 200
+    # Traffic and civic events are closed manually / after fixed duration — not sensor-driven
+    return False
+
+
 async def check_disruptions(city: str, pincode: str) -> list:
-    """Check all 5 disruption triggers with hyper-local DSS adjustment."""
+    """Check all 5 disruption triggers. DSS calculated via ML engine at detection time."""
+    from app.services.dss_service import calculate_dss
+    from datetime import datetime
+    month = datetime.now().month
+
     events = []
-    weather = await fetch_weather_real(city)
+    weather  = await fetch_weather_real(city)
     aqi_data = await fetch_aqi_real(city)
 
     rain_result = classify_rain(weather.get("rainfall_mm_per_hr", 0))
     if rain_result:
         severity, desc = rain_result
+        dss_result = await calculate_dss(
+            DisruptionType.HEAVY_RAIN, severity, city, pincode,
+            raw_value=weather["rainfall_mm_per_hr"], month=month,
+        )
         events.append({
             "disruption_type": DisruptionType.HEAVY_RAIN,
-            "severity": severity,
-            "city": city, "pincode": pincode,
-            "dss_multiplier": get_dss(DisruptionType.HEAVY_RAIN, severity, city, pincode),
+            "severity": severity, "city": city, "pincode": pincode,
+            "dss_multiplier": dss_result["dss"],
             "raw_value": weather["rainfall_mm_per_hr"],
-            "description": desc + f" | Infra score: {get_infra_score(city, pincode)}",
+            "description": desc + f" | infra={dss_result['infra_score']:.2f} method={dss_result['method']}",
             "source": "OpenWeather API",
         })
 
     heat_result = classify_heat(weather.get("temperature_c", 30))
     if heat_result:
         severity, desc = heat_result
+        dss_result = await calculate_dss(
+            DisruptionType.EXTREME_HEAT, severity, city, pincode,
+            raw_value=weather["temperature_c"], month=month,
+        )
         events.append({
             "disruption_type": DisruptionType.EXTREME_HEAT,
-            "severity": severity,
-            "city": city, "pincode": pincode,
-            "dss_multiplier": get_dss(DisruptionType.EXTREME_HEAT, severity, city, pincode),
+            "severity": severity, "city": city, "pincode": pincode,
+            "dss_multiplier": dss_result["dss"],
             "raw_value": weather["temperature_c"],
             "description": desc,
             "source": "OpenWeather API",
@@ -410,11 +435,14 @@ async def check_disruptions(city: str, pincode: str) -> list:
     aqi_result = classify_aqi(aqi_data.get("aqi", 0))
     if aqi_result:
         severity, desc = aqi_result
+        dss_result = await calculate_dss(
+            DisruptionType.AQI_SPIKE, severity, city, pincode,
+            raw_value=aqi_data["aqi"], month=month,
+        )
         events.append({
             "disruption_type": DisruptionType.AQI_SPIKE,
-            "severity": severity,
-            "city": city, "pincode": pincode,
-            "dss_multiplier": get_dss(DisruptionType.AQI_SPIKE, severity, city, pincode),
+            "severity": severity, "city": city, "pincode": pincode,
+            "dss_multiplier": dss_result["dss"],
             "raw_value": aqi_data["aqi"],
             "description": desc,
             "source": "OpenWeather Air Pollution API",
@@ -423,25 +451,32 @@ async def check_disruptions(city: str, pincode: str) -> list:
     traffic_result = fetch_traffic_mock(city)
     if traffic_result:
         severity, desc, congestion_index = traffic_result
+        dss_result = await calculate_dss(
+            DisruptionType.TRAFFIC_DISRUPTION, severity, city, pincode,
+            raw_value=float(congestion_index),
+            raw_value2=weather.get("temperature_c", 30.0),
+            month=month,
+        )
         events.append({
             "disruption_type": DisruptionType.TRAFFIC_DISRUPTION,
-            "severity": severity,
-            "city": city, "pincode": pincode,
-            "dss_multiplier": get_dss(DisruptionType.TRAFFIC_DISRUPTION, severity, city, pincode),
+            "severity": severity, "city": city, "pincode": pincode,
+            "dss_multiplier": dss_result["dss"],
             "raw_value": float(congestion_index),
             "description": desc,
             "source": "Traffic Monitor (Mock)",
         })
 
-    # 5. Civic emergency — real NewsAPI detection
     civic_result = await fetch_civic_real(city)
     if civic_result:
         severity, desc, civic_type = civic_result
+        dss_result = await calculate_dss(
+            DisruptionType.CIVIC_EMERGENCY, severity, city, pincode,
+            month=month,
+        )
         events.append({
             "disruption_type": DisruptionType.CIVIC_EMERGENCY,
-            "severity": severity,
-            "city": city, "pincode": pincode,
-            "dss_multiplier": get_dss(DisruptionType.CIVIC_EMERGENCY, severity, city, pincode),
+            "severity": severity, "city": city, "pincode": pincode,
+            "dss_multiplier": dss_result["dss"],
             "raw_value": None,
             "description": desc,
             "source": f"Civic Alert ({civic_type})",

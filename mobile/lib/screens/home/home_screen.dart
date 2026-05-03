@@ -124,9 +124,13 @@ class HomeScreen extends ConsumerWidget {
           final totalProtected =
               (data['total_earned_protection'] as num?)?.toDouble() ?? 0.0;
 
+          final workerName = (worker['name'] as String?)?.split(' ').first ?? 'Rider';
+          final workerCity = worker['city'] as String? ?? '';
+          final workerPlatform = (worker['platform'] as String?)?.toUpperCase() ?? '';
+
           return CustomScrollView(
             slivers: [
-              _buildAppBar(context, worker, s),
+              _buildAppBar(context, workerName, workerCity, workerPlatform, s),
               SliverPadding(
                 padding: const EdgeInsets.all(20),
                 sliver: SliverList(
@@ -360,8 +364,8 @@ class HomeScreen extends ConsumerWidget {
     return 'Claim could not be triggered. Please refresh and try again.';
   }
 
-  SliverAppBar _buildAppBar(
-      BuildContext context, Map<String, dynamic> worker, dynamic s) {
+  SliverAppBar _buildAppBar(BuildContext context, String workerName,
+      String workerCity, String workerPlatform, dynamic s) {
     return SliverAppBar(
       expandedHeight: 120,
       floating: true,
@@ -377,12 +381,12 @@ class HomeScreen extends ConsumerWidget {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   Text(
-                    '${s.hello}, ${(worker['name'] as String?)?.split(' ').first ?? 'Rider'}',
+                    '${s.hello}, $workerName',
                     style: const TextStyle(
                         fontSize: 22, fontWeight: FontWeight.w800),
                   ),
                   Text(
-                    '${worker['city'] ?? ''} • ${(worker['platform'] as String?)?.toUpperCase() ?? ''}',
+                    '$workerCity • $workerPlatform',
                     style: const TextStyle(
                         color: AppTheme.textSecondary, fontSize: 14),
                   ),
@@ -475,10 +479,16 @@ class _ShieldCardState extends State<_ShieldCard>
     final tierLabel = AppConstants.tierLabels[tier] ?? s.noPolicyActive;
     final premium =
         (widget.policy?['weekly_premium'] as num?)?.toStringAsFixed(0) ?? '0';
-    final endDate = widget.policy?['end_date'] != null
-        ? DateFormat('dd MMM')
-            .format(DateTime.parse(widget.policy!['end_date']))
-        : null;
+    
+    String? endDate;
+    try {
+      final ed = widget.policy?['end_date'];
+      if (ed != null) {
+        endDate = DateFormat('dd MMM').format(DateTime.parse(ed.toString()));
+      }
+    } catch (_) {
+      endDate = null;
+    }
 
     return AnimatedBuilder(
       animation: _pulse,

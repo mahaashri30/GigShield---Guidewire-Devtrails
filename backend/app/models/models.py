@@ -88,6 +88,10 @@ class Worker(Base):
     last_known_lng = Column(Float, nullable=True)
     last_location_at = Column(DateTime(timezone=True), nullable=True)
     fcm_token = Column(String(200), nullable=True)  # Firebase push token
+    # Device fingerprint / SIM-change locking (banking-app style)
+    device_fingerprint = Column(String(200), nullable=True)  # SHA-256 of device ID
+    sim_hash = Column(String(64), nullable=True)              # SHA-256 of SIM serial / ICCID
+    sim_changed_at = Column(DateTime(timezone=True), nullable=True)  # When SIM change was detected
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -203,6 +207,7 @@ class WorkerLocationPing(Base):
     speed_kmh = Column(Float, nullable=True)      # km/h since last ping — >200 = spoof
     distance_km = Column(Float, nullable=True)    # km from last ping
     is_suspicious = Column(Boolean, default=False) # flagged if impossible movement
+    gap_minutes = Column(Float, nullable=True)        # minutes since last ping — large gap = device was off
     city_detected = Column(String(100), nullable=True)
     pincode_detected = Column(String(10), nullable=True)
     recorded_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -224,5 +229,15 @@ class WorkerNotification(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     worker = relationship("Worker", back_populates="notifications")
+
+
+class Admin(Base):
+    __tablename__ = "admins"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    email = Column(String(200), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(200), nullable=False)
+    name = Column(String(100), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -13,6 +13,10 @@ class OTPVerify(BaseModel):
     phone: str = Field(..., pattern=r"^\+?[0-9]{10,15}$")
     otp: str = Field(..., pattern=r"^[0-9]{6}$")
 
+class AdminLogin(BaseModel):
+    email: str
+    password: str
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str

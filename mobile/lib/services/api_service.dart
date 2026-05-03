@@ -99,6 +99,14 @@ class ApiService {
     return res.data;
   }
 
+  Future<Map<String, dynamic>> adminLogin(String email, String password) async {
+    final res = await _dio.post('/auth/admin-login', data: {
+      'email': email,
+      'password': password,
+    });
+    return res.data;
+  }
+
   Future<void> saveTokens(String access, String refresh, String workerId,
       {bool isDevMode = false}) async {
     await _storage.write(key: AppConstants.accessTokenKey, value: access);
@@ -110,6 +118,25 @@ class ApiService {
   Future<bool> isLoggedIn() async {
     final token = await _storage.read(key: AppConstants.accessTokenKey);
     return token != null;
+  }
+
+  Future<bool> isOnboardingDone() async {
+    final value = await _storage.read(key: AppConstants.onboardingDoneKey);
+    return value == 'true';
+  }
+
+  Future<void> setOnboardingDone(bool done) async {
+    await _storage.write(key: AppConstants.onboardingDoneKey, value: '$done');
+  }
+
+  Future<bool> isAdmin() async {
+    // For demo, check if a special key exists or if phone is admin-like
+    final value = await _storage.read(key: 'is_admin');
+    return value == 'true';
+  }
+
+  Future<void> setAdmin(bool admin) async {
+    await _storage.write(key: 'is_admin', value: '$admin');
   }
 
   Future<bool> isDevMode() async {
@@ -238,6 +265,33 @@ class ApiService {
   Future<void> registerFcmToken(String token) async {
     await _dio.post('/workers/fcm-token', data: {'fcm_token': token});
   }
+    // ── Admin ─────────────────────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> getAdminStats() async {
+    final res = await _dio.get('/admin/stats');
+    return res.data;
+  }
+
+  Future<List<dynamic>> getAdminClaims() async {
+    final res = await _dio.get('/admin/claims');
+    return res.data;
+  }
+
+  Future<List<dynamic>> getAdminDisruptions() async {
+    final res = await _dio.get('/admin/disruptions');
+    return res.data;
+  }
+
+  Future<List<dynamic>> getAdminWorkers() async {
+    final res = await _dio.get('/admin/workers');
+    return res.data;
+  }
+
+  Future<Map<String, dynamic>> getAdminDisbursementRatio() async {
+    final res = await _dio.get('/admin/disbursement-ratio');
+    return res.data;
+  }
+
 
   // ── Notifications ─────────────────────────────────────────────────────────
 

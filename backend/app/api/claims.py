@@ -33,25 +33,48 @@ CITY_POOLS = {
     "Patna":          [DisruptionType.HEAVY_RAIN, DisruptionType.EXTREME_HEAT, DisruptionType.CIVIC_EMERGENCY],
 }
 
-# Active hours: delivery workers operate 6am-10pm IST
 ACTIVE_HOUR_START = 6
 ACTIVE_HOUR_END = 22
+TOTAL_ACTIVE_HOURS = 16.0
 
 
 def is_within_active_hours(dt: datetime) -> bool:
-    """Check if event occurred during worker active hours (6am-10pm IST)"""
-    ist_hour = (dt.hour + 5) % 24  # UTC+5:30 approx
+    ist_hour = (dt.hour + 5) % 24
     return ACTIVE_HOUR_START <= ist_hour < ACTIVE_HOUR_END
 
 
-def active_hours_ratio(event_started_at: datetime) -> float:
-    """Returns ratio of remaining active hours after event start."""
-    ist_hour = (event_started_at.hour + 5) % 24
-    if ist_hour < ACTIVE_HOUR_START or ist_hour >= ACTIVE_HOUR_END:
-        return 0.5  # outside active hours — use 50% default so demo always works
-    remaining = ACTIVE_HOUR_END - ist_hour
-    total_active = ACTIVE_HOUR_END - ACTIVE_HOUR_START
-    return round(remaining / total_active, 2)
+def active_hours_ratio(event: object) -> float:
+    """
+    Fraction of the 16-hour working day (6am-10pm IST) lost to this disruption.
+    Uses actual ended_at - started_at, clamped to the active window.
+    Only called by the 3am batch — by then ended_at is always set by the poller.
+    """
+    started = event.started_at
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    ended = event.ended_at
+    if ended is None:
+        # Poller hasn't closed it yet (e.g. overnight civic emergency still active at 3am)
+        # Use current batch time as the end — worker lost the whole remaining active window
+        ended = datetime.now(timezone.utc)
+    if ended.tzinfo is None:
+        ended = ended.replace(tzinfo=timezone.utc)
+
+    ist_offset = timedelta(hours=5, minutes=30)
+    start_ist = started + ist_offset
+    end_ist   = ended   + ist_offset
+
+    day_start = start_ist.replace(hour=ACTIVE_HOUR_START, minute=0, second=0, microsecond=0)
+    day_end   = start_ist.replace(hour=ACTIVE_HOUR_END,   minute=0, second=0, microsecond=0)
+
+    effective_start = max(start_ist, day_start)
+    effective_end   = min(end_ist,   day_end)
+
+    if effective_start >= day_end:
+        return 0.0  # disruption entirely outside active hours
+
+    actual_hours = max(0.0, (effective_end - effective_start).total_seconds() / 3600)
+    return round(actual_hours / TOTAL_ACTIVE_HOURS, 3)
 
 
 import math
@@ -120,9 +143,9 @@ async def trigger_claim(
     if event_started_at.tzinfo is None:
         event_started_at = event_started_at.replace(tzinfo=timezone.utc)
     
-    hours_ratio = active_hours_ratio(event_started_at)
+    hours_ratio = active_hours_ratio(event)
     if hours_ratio <= 0.0:
-        hours_ratio = 0.5  # fallback for outside-hours events
+        hours_ratio = 0.1
 
     # ── Dark Store Proximity / Ward-level check ─────────────────────────────
     worker_prefix = current_worker.pincode[:3] if current_worker.pincode else ""
@@ -220,6 +243,16 @@ async def trigger_claim(
     had_suspicious_ping = suspicious_result.scalar_one_or_none() is not None
     last_known_city = last_ping.city_detected if last_ping else ""
 
+    # Check if device was off during the disruption window (gap > 90 min)
+    had_device_off_gap = False
+    if last_ping and last_ping.gap_minutes and last_ping.gap_minutes > 90:
+        had_device_off_gap = True
+
+    # Check if SIM was changed
+    sim_changed = current_worker.sim_changed_at is not None and (
+        current_worker.sim_changed_at > event_started_at
+    )
+
     fraud_result = calculate_fraud_score(
         worker_city=current_worker.city,
         event_city=event.city,
@@ -239,6 +272,8 @@ async def trigger_claim(
         zone_avg_claims_per_event=0.0,
         zone_claim_count_this_event=zone_claim_count,
         zone_total_workers=zone_total_workers,
+        sim_changed=sim_changed,
+        had_device_off_gap=had_device_off_gap,
     )
 
     # Dynamic caps based on city Cost of Living

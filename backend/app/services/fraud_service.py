@@ -1,6 +1,7 @@
 """
-Fraud Detection Engine - Phase 1 (Rule-Based)
-Phase 2 will add Isolation Forest ML model
+Eligibility & Fraud Detection Engine
+Rule-based + Isolation Forest ML hybrid.
+Also handles device fingerprint / SIM-change detection.
 """
 import json
 import os
@@ -40,7 +41,7 @@ def _utc(dt: datetime) -> datetime:
     return dt
 
 
-def calculate_fraud_score(
+def calculate_eligibility_score(
     worker_city: str,
     event_city: str,
     worker_pincode: str,
@@ -55,18 +56,17 @@ def calculate_fraud_score(
     had_suspicious_ping: bool = False,
     claim_amount_ratio: float = 1.0,
     active_hours_ratio: float = 1.0,
-    # Individual behavioral baseline (from DB query at call site)
-    worker_avg_claims_per_week: float = 0.0,   # worker's own historical average
-    zone_avg_claims_per_event: float = 0.0,    # avg claims per event in this pincode zone
-    zone_claim_count_this_event: int = 0,      # how many workers in zone claimed this event
-    zone_total_workers: int = 0,               # total active workers in zone
+    worker_avg_claims_per_week: float = 0.0,
+    zone_avg_claims_per_event: float = 0.0,
+    zone_claim_count_this_event: int = 0,
+    zone_total_workers: int = 0,
+    device_id_changed: bool = False,
+    sim_changed: bool = False,
+    had_device_off_gap: bool = False,
 ) -> dict:
     """
-    Hybrid fraud scoring: rule-based + individual behavioral baseline + zone-level anomaly + Isolation Forest ML.
-    
-    Individual baseline: flags workers whose claim rate deviates significantly from their OWN history.
-    Zone-level: flags if claim rate for this event in the zone is anomalously low (worker is outlier)
-    or anomalously high (coordinated fraud ring).
+    Eligibility scoring: rule-based + behavioral baseline + zone anomaly + Isolation Forest ML.
+    Returns auto_approve / hold_for_review / auto_reject verdict.
     """
     score = 0.0
     flags = []
@@ -152,6 +152,21 @@ def calculate_fraud_score(
         score += 30
         flags.append("GPS_SPOOF_DETECTED: Impossible movement speed in location history")
 
+    # Rule 7: Device fingerprint / SIM change (banking-app style lock)
+    if sim_changed:
+        score += 45
+        flags.append("SIM_CHANGE_DETECTED: SIM changed since registration — re-KYC required")
+    if device_id_changed:
+        score += 30
+        flags.append("DEVICE_CHANGE_DETECTED: Device ID changed since last verified session")
+
+    # Rule 8: Device-off gap during disruption window
+    # Worker turned off phone during the disruption — location cannot be corroborated.
+    # Not conclusive fraud, but raises score moderately.
+    if had_device_off_gap:
+        score += 15
+        flags.append("DEVICE_OFF_DURING_DISRUPTION: No GPS pings during disruption window — location unverifiable")
+
     # ── ML ML Model Inference (Isolation Forest) ─────────────────────────────
     ml_score = 0.0
     if _fraud_model and _scaler:
@@ -200,3 +215,7 @@ def calculate_fraud_score(
             else "REJECTED"
         ),
     }
+
+
+# Backward-compatible alias
+calculate_fraud_score = calculate_eligibility_score

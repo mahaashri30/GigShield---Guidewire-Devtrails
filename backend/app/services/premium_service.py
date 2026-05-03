@@ -166,11 +166,17 @@ async def calculate_premium(
     city: str = "",
     worker_history_factor: float = 1.0,
     platform_activity_score: float = 1.0,
+    no_claims_weeks: int = 0,
+    policy_count: int = 1,
 ) -> dict:
     """
     Calculate dynamic weekly premium.
     Uses AI infra scoring for any city/pincode in India.
     Falls back to XGBoost ML model, then rule-based formula.
+
+    Feedback loop discounts:
+      no_claims_weeks: consecutive weeks with zero claims → up to 15% discount
+      policy_count: number of times worker has renewed → loyalty discount up to 8%
     """
     base = BASE_PREMIUMS[tier]
     season = get_season_factor()
@@ -188,6 +194,13 @@ async def calculate_premium(
         adjusted = base * zone_risk * season * worker_history_factor * platform_activity_score
         adjusted = round(adjusted, 2)
 
+    # No-claims discount: 5% per 4 consecutive claim-free weeks, max 15%
+    no_claims_discount = min(0.15, (no_claims_weeks // 4) * 0.05)
+    # Continuing insurer (loyalty) discount: 4% per renewal, max 8%
+    loyalty_discount = min(0.08, (max(0, policy_count - 1)) * 0.04)
+    total_discount = no_claims_discount + loyalty_discount
+    adjusted = round(adjusted * (1 - total_discount), 2)
+
     return {
         "tier": tier,
         "base_premium": base,
@@ -196,13 +209,16 @@ async def calculate_premium(
         "season_factor": season,
         "worker_history_factor": worker_history_factor,
         "platform_activity_score": platform_activity_score,
+        "no_claims_discount": round(no_claims_discount * 100, 1),
+        "loyalty_discount": round(loyalty_discount * 100, 1),
+        "total_discount_pct": round(total_discount * 100, 1),
         "max_daily_payout": MAX_DAILY_PAYOUT[tier],
         "max_weekly_payout": MAX_WEEKLY_PAYOUT[tier],
         "risk_breakdown": {
             "base": base,
             "after_zone": round(base * zone_risk, 2),
             "after_season": round(base * zone_risk * season, 2),
-            "final": adjusted,
+            "after_discounts": adjusted,
         },
     }
 
