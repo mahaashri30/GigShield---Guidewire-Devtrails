@@ -190,7 +190,7 @@ async def fetch_weather_mock(city: str) -> dict:
 
 async def fetch_aqi_real(city: str) -> dict:
     """Real AQI from OpenWeatherMap Air Pollution API."""
-    if settings.OPENWEATHER_API_KEY == "":
+    if not is_real_api_key(settings.OPENWEATHER_API_KEY):
         return await fetch_aqi_mock(city)
     city_coords = {
         "Delhi": (28.6139, 77.2090), "Mumbai": (19.0760, 72.8777),
@@ -390,7 +390,7 @@ def fetch_traffic_mock(city: str) -> Optional[tuple]:
 
 
 async def fetch_weather_real(city: str) -> dict:
-    if settings.OPENWEATHER_API_KEY == "":
+    if not is_real_api_key(settings.OPENWEATHER_API_KEY):
         return await fetch_weather_mock(city)
     async with httpx.AsyncClient() as client:
         try:
