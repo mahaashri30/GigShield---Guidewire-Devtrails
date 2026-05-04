@@ -42,9 +42,9 @@ async def lifespan(app: FastAPI):
     from sqlalchemy import select
     from app.models.models import Admin
     from app.services.auth_service import pwd_context
-    from app.database import SessionLocal
+    from app.database import AsyncSessionLocal
     
-    async with SessionLocal() as session:
+    async with AsyncSessionLocal() as session:
         result = await session.execute(select(Admin).where(Admin.email == "codethetrend@gmail.com"))
         admin = result.scalar_one_or_none()
         if not admin:
