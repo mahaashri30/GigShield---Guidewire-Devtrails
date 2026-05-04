@@ -47,21 +47,22 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
 
   void _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     if (_isAdminMode) {
       try {
         await ref.read(authProvider.notifier).adminLogin(
-          _emailCtrl.text.trim(),
-          _passCtrl.text,
-        );
+              _emailCtrl.text.trim(),
+              _passCtrl.text,
+            );
         if (mounted) context.go('/admin/dashboard');
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text('Admin Login Failed: $e'), 
-                backgroundColor: AppTheme.danger,
-                behavior: SnackBarBehavior.floating),
+              content: Text('Admin Login Failed: $e'),
+              backgroundColor: AppTheme.danger,
+              behavior: SnackBarBehavior.floating,
+            ),
           );
         }
       }
@@ -81,12 +82,43 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Error: $e'), 
-              backgroundColor: AppTheme.danger,
-              behavior: SnackBarBehavior.floating),
+            content: Text('Error: $e'),
+            backgroundColor: AppTheme.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     }
+  }
+
+  InputDecoration _inputDeco(String label, IconData icon, {String? prefix}) {
+    return InputDecoration(
+      prefixText: prefix,
+      prefixStyle:
+          const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+      labelText: label,
+      labelStyle:
+          TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 14),
+      prefixIcon: Icon(icon, color: Colors.white, size: 20),
+      filled: true,
+      fillColor: Colors.white.withOpacity(0.05),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Colors.white, width: 2),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: AppTheme.danger.withOpacity(0.5)),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: AppTheme.danger),
+      ),
+    );
   }
 
   @override
@@ -99,6 +131,7 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // Video background
           if (_videoCtrl.value.isInitialized)
             FittedBox(
               fit: BoxFit.cover,
@@ -108,6 +141,7 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
                 child: VideoPlayer(_videoCtrl),
               ),
             ),
+          // Dark gradient overlay
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -121,6 +155,7 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
               ),
             ),
           ),
+          // Content
           SafeArea(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
@@ -129,13 +164,14 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Top Bar with Language and Admin Toggle
+                    // Top bar: admin toggle + language pills
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         _AdminToggleButton(
                           isAdmin: _isAdminMode,
-                          onToggle: () => setState(() => _isAdminMode = !_isAdminMode),
+                          onToggle: () =>
+                              setState(() => _isAdminMode = !_isAdminMode),
                         ),
                         Row(
                           children: AppStrings.all.entries.map((entry) {
@@ -180,6 +216,8 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
                     ),
 
                     const SizedBox(height: 40),
+
+                    // Logo / icon
                     Center(
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 400),
@@ -188,10 +226,14 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white.withOpacity(0.1),
                           shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white.withOpacity(0.2), width: 2),
-                          image: _isAdminMode 
-                            ? const DecorationImage(image: AssetImage('assets/images/susanoo_icon.jpg'), fit: BoxFit.cover)
-                            : null,
+                          border: Border.all(
+                              color: Colors.white.withOpacity(0.2), width: 2),
+                          image: _isAdminMode
+                              ? const DecorationImage(
+                                  image: AssetImage(
+                                      'assets/images/susanoo_icon.jpg'),
+                                  fit: BoxFit.cover)
+                              : null,
                           boxShadow: [
                             BoxShadow(
                               color: AppTheme.primary.withOpacity(0.3),
@@ -200,11 +242,16 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
                             )
                           ],
                         ),
-                        child: !_isAdminMode ? const Icon(Icons.shield_rounded,
-                            color: Colors.white, size: 40) : null,
+                        child: !_isAdminMode
+                            ? const Icon(Icons.shield_rounded,
+                                color: Colors.white, size: 40)
+                            : null,
                       ),
                     ),
+
                     const SizedBox(height: 32),
+
+                    // Title
                     Center(
                       child: Column(
                         children: [
@@ -218,7 +265,9 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            _isAdminMode ? 'Management & Oversight' : 'The Ultimate Defense',
+                            _isAdminMode
+                                ? 'Management & Oversight'
+                                : 'The Ultimate Defense',
                             style: TextStyle(
                                 fontSize: 14,
                                 letterSpacing: 2,
@@ -228,102 +277,135 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
                         ],
                       ),
                     ),
-                    
+
                     const SizedBox(height: 60),
 
-                    // Input Card
+                    // Input card with glassmorphism
                     AnimatedSize(
                       duration: const Duration(milliseconds: 300),
-                      child: Container(
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: Colors.white.withOpacity(0.15)),
-                          backdropFilter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _isAdminMode ? 'System Login' : s.mobileNumber,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 18,
-                              ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: BackdropFilter(
+                          filter:
+                              ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          child: Container(
+                            padding: const EdgeInsets.all(24),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                  color: Colors.white.withOpacity(0.15)),
                             ),
-                            const SizedBox(height: 20),
-                            if (!_isAdminMode)
-                            TextFormField(
-                              controller: _phoneCtrl,
-                              keyboardType: TextInputType.phone,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600),
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                                LengthLimitingTextInputFormatter(10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _isAdminMode
+                                      ? 'System Login'
+                                      : s.mobileNumber,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                                if (!_isAdminMode)
+                                  TextFormField(
+                                    controller: _phoneCtrl,
+                                    keyboardType: TextInputType.phone,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600),
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                      LengthLimitingTextInputFormatter(10),
+                                    ],
+                                    decoration: _inputDeco(s.mobileNumber,
+                                        Icons.phone_android_rounded,
+                                        prefix: '+91 '),
+                                    validator: (v) {
+                                      if (_isAdminMode) return null;
+                                      if (v == null || v.length != 10)
+                                        return s.invalidPhone;
+                                      return null;
+                                    },
+                                  )
+                                else ...[
+                                  TextFormField(
+                                    controller: _emailCtrl,
+                                    keyboardType: TextInputType.emailAddress,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600),
+                                    decoration: _inputDeco('Email Address',
+                                        Icons.alternate_email_rounded),
+                                    validator: (v) =>
+                                        v == null || !v.contains('@')
+                                            ? 'Invalid email'
+                                            : null,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  TextFormField(
+                                    controller: _passCtrl,
+                                    obscureText: true,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600),
+                                    decoration: _inputDeco(
+                                        'Password', Icons.lock_open_rounded),
+                                    validator: (v) =>
+                                        v == null || v.isEmpty
+                                            ? 'Required'
+                                            : null,
+                                  ),
+                                ],
+                                const SizedBox(height: 32),
+                                ElevatedButton(
+                                  onPressed: auth.isLoading ? null : _submit,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: AppTheme.primary,
+                                    minimumSize:
+                                        const Size(double.infinity, 56),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(16)),
+                                    elevation: 0,
+                                  ),
+                                  child: auth.isLoading
+                                      ? const CircularProgressIndicator()
+                                      : Text(
+                                          _isAdminMode
+                                              ? 'LOGIN TO DASHBOARD'
+                                              : s.sendOtp,
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 16,
+                                              letterSpacing: 1),
+                                        ),
+                                ),
                               ],
-                              decoration: _inputDeco(s.mobileNumber, Icons.phone_android_rounded, prefix: '+91 '),
-                              validator: (v) {
-                                if (_isAdminMode) return null;
-                                if (v == null || v.length != 10)
-                                  return s.invalidPhone;
-                                return null;
-                              },
-                            )
-                            else ...[
-                              TextFormField(
-                                controller: _emailCtrl,
-                                keyboardType: TextInputType.emailAddress,
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                                decoration: _inputDeco('Email Address', Icons.alternate_email_rounded),
-                                validator: (v) => v == null || !v.contains('@') ? 'Invalid email' : null,
-                              ),
-                              const SizedBox(height: 16),
-                              TextFormField(
-                                controller: _passCtrl,
-                                obscureText: true,
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                                decoration: _inputDeco('Password', Icons.lock_open_rounded),
-                                validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-                              ),
-                            ],
-                            const SizedBox(height: 32),
-                            ElevatedButton(
-                              onPressed: auth.isLoading ? null : _submit,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: AppTheme.primary,
-                                minimumSize: const Size(double.infinity, 56),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                elevation: 0,
-                              ),
-                              child: auth.isLoading
-                                  ? const CircularProgressIndicator()
-                                  : Text(
-                                      _isAdminMode ? 'LOGIN TO DASHBOARD' : s.sendOtp,
-                                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, letterSpacing: 1),
-                                    ),
                             ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
+
                     const SizedBox(height: 24),
+
                     if (!_isAdminMode)
-                    Center(
-                      child: Text(
-                        s.welcomeSub,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.white.withOpacity(0.5),
-                            height: 1.5),
+                      Center(
+                        child: Text(
+                          s.welcomeSub,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.white.withOpacity(0.5),
+                              height: 1.5),
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -333,57 +415,38 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
       ),
     );
   }
-
-  InputDecoration _inputDeco(String label, IconData icon, {String? prefix}) {
-    return InputDecoration(
-      prefixText: prefix,
-      prefixStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-      labelText: label,
-      labelStyle: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 14),
-      prefixIcon: Icon(icon, color: Colors.white, size: 20),
-      filled: true,
-      fillColor: Colors.white.withOpacity(0.05),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Colors.white, width: 2),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(color: AppTheme.danger.withOpacity(0.5)),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(color: AppTheme.danger),
-      ),
-    );
-  }
 }
 
 class _AdminToggleButton extends StatelessWidget {
   final bool isAdmin;
   final VoidCallback onToggle;
-  const _AdminToggleButton({required this.isAdmin, required this.onToggle});
+  const _AdminToggleButton(
+      {required this.isAdmin, required this.onToggle});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onToggle,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: isAdmin ? AppTheme.primary : Colors.white.withOpacity(0.1),
+          color: isAdmin
+              ? AppTheme.primary
+              : Colors.white.withOpacity(0.1),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: isAdmin ? Colors.white : Colors.white.withOpacity(0.2)),
+          border: Border.all(
+              color: isAdmin
+                  ? Colors.white
+                  : Colors.white.withOpacity(0.2)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              isAdmin ? Icons.admin_panel_settings_rounded : Icons.person_outline_rounded,
+              isAdmin
+                  ? Icons.admin_panel_settings_rounded
+                  : Icons.person_outline_rounded,
               color: Colors.white,
               size: 16,
             ),

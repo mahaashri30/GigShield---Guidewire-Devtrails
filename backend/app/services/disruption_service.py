@@ -312,6 +312,79 @@ def fetch_civic_mock(city: str) -> Optional[tuple]:
     return random.choice(CIVIC_SCENARIOS.get(city, [None, None, None]))
 
 
+async def fetch_traffic_real(city: str, lat: float = 0.0, lng: float = 0.0) -> Optional[tuple]:
+    """
+    Real traffic congestion via TomTom Flow Segment API.
+    Uses GPS coordinates — works for ANY location in India, not just hardcoded cities.
+
+    Flow: lat/lng → TomTom currentSpeed vs freeFlowSpeed → congestion index.
+    Congestion index = ((freeFlow - current) / freeFlow) * 100
+      0-39  → normal, no disruption
+      40-69 → moderate disruption
+      70+   → severe disruption
+
+    Falls back to mock if TomTom key not configured or coords unavailable.
+    """
+    if not settings.TOMTOM_API_KEY:
+        return fetch_traffic_mock(city)
+
+    # If no coords passed, resolve from city name via geocoding cache
+    if not lat or not lng:
+        try:
+            from app.services.geocoding_service import resolve_city
+            _, lat, lng = await resolve_city(city)
+        except Exception:
+            pass
+
+    if not lat or not lng:
+        return fetch_traffic_mock(city)
+
+    try:
+        async with httpx.AsyncClient() as client:
+            # TomTom Flow Segment Data API — returns speed at a road segment
+            # near the given coordinates. zoom=10 gives city-level road data.
+            r = await client.get(
+                f"https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json",
+                params={
+                    "point": f"{lat},{lng}",
+                    "key": settings.TOMTOM_API_KEY,
+                    "unit": "KMPH",
+                },
+                timeout=6.0,
+            )
+            data = r.json()
+            flow = data.get("flowSegmentData", {})
+            current_speed  = float(flow.get("currentSpeed", 0))
+            free_flow_speed = float(flow.get("freeFlowSpeed", 0))
+
+            if free_flow_speed <= 0 or current_speed <= 0:
+                return None
+
+            # Congestion: how much speed has dropped from free-flow
+            congestion_index = round((free_flow_speed - current_speed) / free_flow_speed * 100)
+
+            if congestion_index < 40:
+                return None  # Normal traffic
+            elif congestion_index < 70:
+                desc = (
+                    f"Heavy traffic near {city} — "
+                    f"roads at {current_speed:.0f} km/h vs normal {free_flow_speed:.0f} km/h "
+                    f"({congestion_index}% slower)"
+                )
+                return DisruptionSeverity.MODERATE, desc, congestion_index
+            else:
+                desc = (
+                    f"Severe gridlock near {city} — "
+                    f"roads at {current_speed:.0f} km/h vs normal {free_flow_speed:.0f} km/h "
+                    f"({congestion_index}% slower)"
+                )
+                return DisruptionSeverity.SEVERE, desc, congestion_index
+
+    except (httpx.HTTPError, KeyError, TypeError, ValueError) as e:
+        print(f"[TomTom Traffic ERROR] {city}: {e}")
+        return fetch_traffic_mock(city)
+
+
 def fetch_traffic_mock(city: str) -> Optional[tuple]:
     return random.choice(TRAFFIC_SCENARIOS.get(city, [None, None, None]))
 
@@ -390,7 +463,7 @@ def check_disruption_cleared(disruption_type: DisruptionType, weather: dict, aqi
     return False
 
 
-async def check_disruptions(city: str, pincode: str) -> list:
+async def check_disruptions(city: str, pincode: str, lat: float = 0.0, lng: float = 0.0) -> list:
     """Check all 5 disruption triggers. DSS calculated via ML engine at detection time."""
     from app.services.dss_service import calculate_dss
     from datetime import datetime
@@ -448,7 +521,8 @@ async def check_disruptions(city: str, pincode: str) -> list:
             "source": "OpenWeather Air Pollution API",
         })
 
-    traffic_result = fetch_traffic_mock(city)
+    # Traffic: pass real coordinates so TomTom works for any location in India
+    traffic_result = await fetch_traffic_real(city, lat=lat, lng=lng)
     if traffic_result:
         severity, desc, congestion_index = traffic_result
         dss_result = await calculate_dss(
@@ -463,7 +537,7 @@ async def check_disruptions(city: str, pincode: str) -> list:
             "dss_multiplier": dss_result["dss"],
             "raw_value": float(congestion_index),
             "description": desc,
-            "source": "Traffic Monitor (Mock)",
+            "source": "TomTom Traffic API" if settings.TOMTOM_API_KEY else "Traffic Monitor (Mock)",
         })
 
     civic_result = await fetch_civic_real(city)

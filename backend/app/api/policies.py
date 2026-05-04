@@ -135,42 +135,94 @@ async def get_available_coverage(
 @router.get("/quote", response_model=PremiumQuote)
 async def get_quote(
     tier: PolicyTier = PolicyTier.SMART,
+    db: AsyncSession = Depends(get_db),
     current_worker: Worker = Depends(get_current_worker),
 ):
     import asyncio
+    from sqlalchemy import func
+    from app.models.models import Claim, ClaimStatus
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc)
+
+    # Query real no-claims streak from DB
+    no_claims_weeks = 0
+    for week in range(1, 13):
+        week_start = now - timedelta(weeks=week)
+        week_end   = now - timedelta(weeks=week - 1)
+        claims_in_week = await db.execute(
+            select(func.count(Claim.id)).where(
+                Claim.worker_id == current_worker.id,
+                Claim.created_at >= week_start,
+                Claim.created_at < week_end,
+                Claim.status.in_([ClaimStatus.APPROVED, ClaimStatus.PAID]),
+            )
+        )
+        if (claims_in_week.scalar() or 0) == 0:
+            no_claims_weeks += 1
+        else:
+            break
+
+    # Query real policy count (loyalty discount)
+    policy_count_result = await db.execute(
+        select(func.count(Policy.id)).where(Policy.worker_id == current_worker.id)
+    )
+    policy_count = policy_count_result.scalar() or 1
+
+    # Worker history factor from last 12 weeks of claims
+    twelve_weeks_ago = now - timedelta(weeks=12)
+    actual_claims_result = await db.execute(
+        select(func.count(Claim.id)).where(
+            Claim.worker_id == current_worker.id,
+            Claim.created_at >= twelve_weeks_ago,
+            Claim.status.in_([ClaimStatus.APPROVED, ClaimStatus.PAID]),
+        )
+    )
+    actual_claims_12w = actual_claims_result.scalar() or 0
+    EXPECTED_CLAIMS_12W = 6.0
+    worker_history_factor = 0.90 if actual_claims_12w == 0 else round(
+        max(0.85, min(1.30, actual_claims_12w / EXPECTED_CLAIMS_12W)), 3
+    )
+
     try:
         result = await asyncio.wait_for(
             calculate_premium(
                 tier=tier,
                 pincode=current_worker.pincode,
                 city=current_worker.city,
-                worker_history_factor=1.0,
+                worker_history_factor=worker_history_factor,
                 platform_activity_score=1.0,
+                no_claims_weeks=no_claims_weeks,
+                policy_count=policy_count,
             ),
             timeout=5.0,
         )
     except asyncio.TimeoutError:
-        # Gemini timed out — return rule-based fallback immediately
-        from app.services.premium_service import get_season_factor, get_sub_zone_risk, MAX_DAILY_PAYOUT, MAX_WEEKLY_PAYOUT
+        from app.services.premium_service import get_season_factor, get_sub_zone_risk
         base = BASE_PREMIUMS[tier]
         zone_risk = get_sub_zone_risk(current_worker.pincode)
         season = get_season_factor()
-        adjusted = round(base * zone_risk * season, 2)
+        no_claims_discount = min(0.15, (no_claims_weeks // 4) * 0.05)
+        loyalty_discount = min(0.08, (max(0, policy_count - 1)) * 0.04)
+        adjusted = round(base * zone_risk * season * worker_history_factor * (1 - no_claims_discount - loyalty_discount), 2)
         result = {
             "tier": tier,
             "base_premium": base,
             "adjusted_premium": adjusted,
             "zone_risk_multiplier": zone_risk,
             "season_factor": season,
-            "worker_history_factor": 1.0,
+            "worker_history_factor": worker_history_factor,
             "platform_activity_score": 1.0,
+            "no_claims_discount": round(no_claims_discount * 100, 1),
+            "loyalty_discount": round(loyalty_discount * 100, 1),
+            "total_discount_pct": round((no_claims_discount + loyalty_discount) * 100, 1),
             "max_daily_payout": MAX_DAILY_PAYOUT[tier],
             "max_weekly_payout": MAX_WEEKLY_PAYOUT[tier],
             "risk_breakdown": {
                 "base": base,
                 "after_zone": round(base * zone_risk, 2),
                 "after_season": round(base * zone_risk * season, 2),
-                "final": adjusted,
+                "after_discounts": adjusted,
             },
         }
     return PremiumQuote(**result)

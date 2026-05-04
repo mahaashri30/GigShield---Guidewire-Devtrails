@@ -15,6 +15,7 @@ class AppConstants {
   static const String devModeKey = 'dev_mode';
   static const String onboardingDoneKey = 'onboarding_done';
   static const String termsAcceptedKey = 'terms_accepted';
+  static const String simHashKey = 'sim_hash';
 
   static const Map<String, String> tierLabels = {
     'basic': 'Basic Shield',

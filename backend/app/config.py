@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     TWITTER_CONSUMER_KEY: str = "mock_key"
     TWITTER_CONSUMER_SECRET: str = "mock_key"
     TWITTER_ACCESS_TOKEN: str = "mock_key"
-    TWITTER_ACCESS_TOKEN_SECRET: str = "mock_key"
+    TOMTOM_API_KEY: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

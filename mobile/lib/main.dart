@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:susanoo/providers/app_providers.dart';
 import 'package:susanoo/providers/locale_provider.dart';
 import 'package:susanoo/router/app_router.dart';
 import 'package:susanoo/theme/app_theme.dart';
@@ -56,7 +57,18 @@ class _LocationPermissionWrapperState
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkPermission());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkPermission();
+      _checkDeviceFingerprint();
+    });
+  }
+
+  Future<void> _checkDeviceFingerprint() async {
+    try {
+      final api = ref.read(apiServiceProvider);
+      final loggedIn = await api.isLoggedIn();
+      if (loggedIn) await api.checkAndReportDeviceChange();
+    } catch (_) {}
   }
 
   Future<void> _checkPermission() async {

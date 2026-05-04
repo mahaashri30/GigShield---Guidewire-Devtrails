@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:susanoo/l10n/app_strings.dart';
 import 'package:susanoo/providers/app_providers.dart';
 import 'package:susanoo/providers/locale_provider.dart';
 import 'package:susanoo/theme/app_theme.dart';

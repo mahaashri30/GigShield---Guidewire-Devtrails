@@ -32,6 +32,11 @@ final _disbursementProvider = FutureProvider.autoDispose<Map<String, dynamic>>((
   return api.getAdminDisbursementRatio();
 });
 
+final _adminAnalyticsProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+  final api = ref.watch(apiServiceProvider);
+  return api.getAdminAnalytics();
+});
+
 // ── Main Screen ───────────────────────────────────────────────────────────────
 
 class AdminDashboardScreen extends ConsumerStatefulWidget {
@@ -49,7 +54,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 4, vsync: this);
+    _tabs = TabController(length: 5, vsync: this);
     _tabs.addListener(() => setState(() => _selectedTab = _tabs.index));
   }
 
@@ -78,6 +83,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                 controller: _tabs,
                 children: const [
                   _OverviewTab(),
+                  _AnalyticsTab(),
                   _ClaimsTab(),
                   _DisruptionsTab(),
                   _WorkersTab(),
@@ -143,8 +149,14 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
   }
 
   Widget _buildTabBar() {
-    final tabs = ['Overview', 'Claims', 'Disruptions', 'Workers'];
-    final icons = [Icons.dashboard_rounded, Icons.receipt_long_rounded, Icons.bolt_rounded, Icons.people_rounded];
+    final tabs = ['Overview', 'Analytics', 'Claims', 'Disruptions', 'Workers'];
+    final icons = [
+      Icons.dashboard_rounded,
+      Icons.bar_chart_rounded,
+      Icons.receipt_long_rounded,
+      Icons.bolt_rounded,
+      Icons.people_rounded,
+    ];
     return Container(
       color: const Color(0xFF0F172A),
       child: Row(
@@ -155,7 +167,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
               onTap: () => _tabs.animateTo(i),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
                   border: Border(
                     bottom: BorderSide(color: active ? AppTheme.primary : Colors.transparent, width: 2),
@@ -163,9 +175,9 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                 ),
                 child: Column(
                   children: [
-                    Icon(icons[i], size: 18, color: active ? AppTheme.primary : Colors.white38),
-                    const SizedBox(height: 4),
-                    Text(tabs[i], style: TextStyle(fontSize: 11, fontWeight: active ? FontWeight.w700 : FontWeight.w400, color: active ? AppTheme.primary : Colors.white38)),
+                    Icon(icons[i], size: 16, color: active ? AppTheme.primary : Colors.white38),
+                    const SizedBox(height: 3),
+                    Text(tabs[i], style: TextStyle(fontSize: 9, fontWeight: active ? FontWeight.w700 : FontWeight.w400, color: active ? AppTheme.primary : Colors.white38)),
                   ],
                 ),
               ),
@@ -265,6 +277,12 @@ class _OverviewTab extends ConsumerWidget {
           statsAsync.when(
             data: (d) => _ActiveDisruptionsPanel(disruptions: (d['active_disruptions'] as List?) ?? []),
             loading: () => _DarkCard(child: const _Shimmer(height: 100)),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
+          const SizedBox(height: 16),
+          statsAsync.when(
+            data: (d) => _WeeklyChartPanel(chart: (d['weekly_chart'] as List?) ?? []),
+            loading: () => _DarkCard(child: const _Shimmer(height: 160)),
             error: (_, __) => const SizedBox.shrink(),
           ),
           const SizedBox(height: 16),
@@ -370,6 +388,39 @@ class _BCRPanel extends StatelessWidget {
               const _MiniStat(label: 'Target Range', value: '0.55 – 0.70'),
             ],
           ),
+          if ((data['by_tier'] as List?)?.isNotEmpty == true) ...[
+            const SizedBox(height: 16),
+            const Text('By Tier', style: TextStyle(color: Colors.white38, fontSize: 11, letterSpacing: 0.5)),
+            const SizedBox(height: 8),
+            Row(
+              children: (data['by_tier'] as List).map((t) {
+                final tier = t as Map<String, dynamic>;
+                final r = (tier['ratio'] as num?)?.toDouble() ?? 0.0;
+                final name = (tier['tier'] as String? ?? '').toUpperCase();
+                final color = name == 'PRO' ? AppTheme.success : name == 'SMART' ? AppTheme.primary : AppTheme.warning;
+                return Expanded(
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: color.withOpacity(0.2)),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(name, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 4),
+                        Text('${(r * 100).toStringAsFixed(0)}%',
+                            style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w900)),
+                        Text('BCR', style: TextStyle(color: color.withOpacity(0.6), fontSize: 9)),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
           if ((data['by_city'] as List?)?.isNotEmpty == true) ...[
             const SizedBox(height: 16),
             const Text('By City', style: TextStyle(color: Colors.white38, fontSize: 11, letterSpacing: 0.5)),
@@ -559,6 +610,375 @@ class _EligibilityPanel extends StatelessWidget {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Weekly Chart Panel ───────────────────────────────────────────────────────
+
+class _WeeklyChartPanel extends StatelessWidget {
+  final List chart;
+  const _WeeklyChartPanel({required this.chart});
+
+  @override
+  Widget build(BuildContext context) {
+    if (chart.isEmpty) return const SizedBox.shrink();
+    return _DarkCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.bar_chart_rounded, color: AppTheme.primary, size: 16),
+              SizedBox(width: 8),
+              Text('7-Day Trend', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 120,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: chart.map((d) {
+                final m = d as Map<String, dynamic>;
+                final claims = (m['claims'] as num?)?.toInt() ?? 0;
+                final payouts = (m['payouts'] as num?)?.toDouble() ?? 0.0;
+                final maxVal = chart.fold<double>(1, (prev, e) {
+                  final c = (e as Map)['claims'] as num? ?? 0;
+                  return c.toDouble() > prev ? c.toDouble() : prev;
+                });
+                final barH = claims / maxVal;
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Text('$claims', style: const TextStyle(color: Colors.white54, fontSize: 8)),
+                        const SizedBox(height: 2),
+                        Container(
+                          height: 80 * barH,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [AppTheme.primary, Color(0xFF10B981)],
+                              begin: Alignment.bottomCenter,
+                              end: Alignment.topCenter,
+                            ),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(m['day'] as String? ?? '', style: const TextStyle(color: Colors.white38, fontSize: 9)),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Analytics Tab ─────────────────────────────────────────────────────────────
+
+class _AnalyticsTab extends ConsumerWidget {
+  const _AnalyticsTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final analyticsAsync = ref.watch(_adminAnalyticsProvider);
+    final disbAsync = ref.watch(_disbursementProvider);
+
+    return RefreshIndicator(
+      color: AppTheme.primary,
+      backgroundColor: const Color(0xFF1E293B),
+      onRefresh: () async {
+        ref.invalidate(_adminAnalyticsProvider);
+        ref.invalidate(_disbursementProvider);
+      },
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // Next-week forecast
+          analyticsAsync.when(
+            data: (d) => _ForecastPanel(forecast: (d['next_week_forecast'] as List?) ?? []),
+            loading: () => _DarkCard(child: const _Shimmer(height: 160)),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
+          const SizedBox(height: 16),
+          // City loss ratios
+          analyticsAsync.when(
+            data: (d) => _CityLossPanel(cities: (d['city_loss_ratios'] as List?) ?? []),
+            loading: () => _DarkCard(child: const _Shimmer(height: 200)),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
+          const SizedBox(height: 16),
+          // Stress test
+          analyticsAsync.when(
+            data: (d) => _StressTestPanel(stress: d['stress_test'] as Map<String, dynamic>? ?? {}),
+            loading: () => _DarkCard(child: const _Shimmer(height: 120)),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
+          const SizedBox(height: 16),
+          // Eligibility trend
+          analyticsAsync.when(
+            data: (d) => _EligibilityTrendPanel(trend: (d['eligibility_trend'] as List?) ?? []),
+            loading: () => _DarkCard(child: const _Shimmer(height: 120)),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ForecastPanel extends StatelessWidget {
+  final List forecast;
+  const _ForecastPanel({required this.forecast});
+
+  @override
+  Widget build(BuildContext context) {
+    return _DarkCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.trending_up_rounded, color: AppTheme.success, size: 16),
+              SizedBox(width: 8),
+              Text('Next Week Forecast', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text('Estimated claims by city based on trigger probabilities',
+              style: TextStyle(color: Colors.white38, fontSize: 11)),
+          const SizedBox(height: 14),
+          if (forecast.isEmpty)
+            const Text('No active cities', style: TextStyle(color: Colors.white38, fontSize: 13))
+          else
+            ...forecast.map((f) {
+              final m = f as Map<String, dynamic>;
+              final city = m['city'] as String? ?? '';
+              final atRisk = (m['workers_at_risk'] as num?)?.toInt() ?? 0;
+              final estClaims = (m['estimated_claims'] as num?)?.toInt() ?? 0;
+              final topRisks = (m['top_risks'] as List?) ?? [];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.04),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white.withOpacity(0.06)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(city, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+                          const SizedBox(height: 4),
+                          Text(
+                            topRisks.map((r) {
+                              final rm = r as Map<String, dynamic>;
+                              return '${rm['peril']} ${rm['probability']}%';
+                            }).join(' • '),
+                            style: const TextStyle(color: Colors.white38, fontSize: 10),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text('~$estClaims claims', style: const TextStyle(color: AppTheme.warning, fontWeight: FontWeight.w700, fontSize: 13)),
+                        Text('$atRisk at risk', style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+}
+
+class _CityLossPanel extends StatelessWidget {
+  final List cities;
+  const _CityLossPanel({required this.cities});
+
+  @override
+  Widget build(BuildContext context) {
+    return _DarkCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.location_city_rounded, color: AppTheme.warning, size: 16),
+              SizedBox(width: 8),
+              Text('City Loss Ratios', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text('Claims paid vs premium collected per city',
+              style: TextStyle(color: Colors.white38, fontSize: 11)),
+          const SizedBox(height: 14),
+          if (cities.isEmpty)
+            const Text('No data yet', style: TextStyle(color: Colors.white38, fontSize: 13))
+          else
+            ...cities.map((c) {
+              final m = c as Map<String, dynamic>;
+              final city = m['city'] as String? ?? '';
+              final ratio = (m['loss_ratio'] as num?)?.toDouble() ?? 0.0;
+              final paid = (m['paid'] as num?)?.toDouble() ?? 0.0;
+              final premium = (m['premium'] as num?)?.toDouble() ?? 0.0;
+              final color = ratio > 0.85 ? AppTheme.danger : ratio > 0.70 ? AppTheme.warning : ratio > 0.55 ? AppTheme.success : AppTheme.primary;
+              final label = ratio > 0.85 ? 'CRITICAL' : ratio > 0.70 ? 'ELEVATED' : ratio > 0.55 ? 'HEALTHY' : 'LOW';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: Text(city, style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600))),
+                        _Chip(label: label, color: color),
+                        const SizedBox(width: 8),
+                        Text('${(ratio * 100).toStringAsFixed(0)}%', style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: ratio.clamp(0.0, 1.0),
+                        minHeight: 6,
+                        backgroundColor: Colors.white10,
+                        valueColor: AlwaysStoppedAnimation<Color>(color),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text('Paid ₹${paid.toStringAsFixed(0)} / Collected ₹${premium.toStringAsFixed(0)}',
+                        style: const TextStyle(color: Colors.white24, fontSize: 9)),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+}
+
+class _StressTestPanel extends StatelessWidget {
+  final Map<String, dynamic> stress;
+  const _StressTestPanel({required this.stress});
+
+  @override
+  Widget build(BuildContext context) {
+    if (stress.isEmpty) return const SizedBox.shrink();
+    final verdict = stress['verdict'] as String? ?? '';
+    final stressBcr = (stress['stress_bcr'] as num?)?.toDouble() ?? 0.0;
+    final triggerDays = stress['expected_trigger_days'];
+    final maxLiability = (stress['max_liability_per_worker'] as num?)?.toDouble() ?? 0.0;
+    final isSolvent = verdict == 'SOLVENT';
+
+    return _DarkCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.thunderstorm_rounded, color: isSolvent ? AppTheme.success : AppTheme.danger, size: 16),
+              const SizedBox(width: 8),
+              const Text('14-Day Monsoon Stress Test', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
+              const Spacer(),
+              _Chip(label: verdict, color: isSolvent ? AppTheme.success : AppTheme.danger),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text('Worst-case payout liability per worker in a 14-day monsoon',
+              style: TextStyle(color: Colors.white38, fontSize: 11)),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              _MiniStat(label: 'Stress BCR', value: stressBcr.toStringAsFixed(2)),
+              const SizedBox(width: 16),
+              _MiniStat(label: 'Trigger Days', value: '$triggerDays'),
+              const SizedBox(width: 16),
+              _MiniStat(label: 'Max Liability', value: '₹${maxLiability.toStringAsFixed(0)}'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EligibilityTrendPanel extends StatelessWidget {
+  final List trend;
+  const _EligibilityTrendPanel({required this.trend});
+
+  @override
+  Widget build(BuildContext context) {
+    if (trend.isEmpty) return const SizedBox.shrink();
+    final maxFlagged = trend.fold<int>(1, (prev, e) {
+      final f = (e as Map)['flagged'] as num? ?? 0;
+      return f.toInt() > prev ? f.toInt() : prev;
+    });
+    return _DarkCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.verified_user_rounded, color: AppTheme.danger, size: 16),
+              SizedBox(width: 8),
+              Text('Eligibility Flags (7 Days)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 80,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: trend.map((d) {
+                final m = d as Map<String, dynamic>;
+                final flagged = (m['flagged'] as num?)?.toInt() ?? 0;
+                final barH = flagged / maxFlagged;
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (flagged > 0)
+                          Text('$flagged', style: const TextStyle(color: Colors.white54, fontSize: 8)),
+                        const SizedBox(height: 2),
+                        Container(
+                          height: flagged == 0 ? 4 : 60 * barH,
+                          decoration: BoxDecoration(
+                            color: flagged == 0 ? Colors.white10 : AppTheme.danger.withOpacity(0.7),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(m['day'] as String? ?? '', style: const TextStyle(color: Colors.white38, fontSize: 9)),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
         ],
       ),
     );

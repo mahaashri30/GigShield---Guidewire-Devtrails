@@ -37,6 +37,12 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.expire_old_policies",
         "schedule": crontab(hour=21, minute=0),  # 21:00 UTC = 2:30am IST
     },
+    # ── Deleted account purge: daily 3:30am IST ───────────────────────────
+    # Permanently removes anonymised worker rows after 30-day grace period
+    "purge-deleted-accounts": {
+        "task": "app.workers.tasks.purge_deleted_accounts",
+        "schedule": crontab(hour=22, minute=0),  # 22:00 UTC = 3:30am IST
+    },
 }
 
 celery_app.conf.timezone = "Asia/Kolkata"

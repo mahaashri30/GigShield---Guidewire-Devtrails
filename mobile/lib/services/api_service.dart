@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:susanoo/utils/constants.dart';
@@ -148,6 +151,53 @@ class ApiService {
     await _storage.deleteAll();
   }
 
+  // ── SIM / Device fingerprint ──────────────────────────────────────────────
+
+  /// Builds a stable device fingerprint from platform + OS version.
+  /// On Android this is a hash of Build.FINGERPRINT equivalent fields.
+  /// Not 100% unique but sufficient to detect device swaps.
+  String _buildDeviceFingerprint() {
+    final info = [
+      Platform.operatingSystem,
+      Platform.operatingSystemVersion,
+      Platform.localHostname,
+    ].join('|');
+    return sha256.convert(utf8.encode(info)).toString();
+  }
+
+  /// Called on every app launch after login.
+  /// Compares current device fingerprint to the stored one.
+  /// If changed, reports to backend so fraud engine can flag it.
+  Future<void> checkAndReportDeviceChange() async {
+    try {
+      final currentHash = _buildDeviceFingerprint();
+      final storedHash = await _storage.read(key: AppConstants.simHashKey);
+
+      if (storedHash == null) {
+        // First time — store and register with backend
+        await _storage.write(key: AppConstants.simHashKey, value: currentHash);
+        await _dio.post('/workers/device-fingerprint', data: {
+          'fingerprint': currentHash,
+          'changed': false,
+        });
+        return;
+      }
+
+      if (storedHash != currentHash) {
+        // Device changed — report to backend immediately
+        await _dio.post('/workers/device-fingerprint', data: {
+          'fingerprint': currentHash,
+          'changed': true,
+          'previous_hash': storedHash,
+        });
+        // Update stored hash to new device
+        await _storage.write(key: AppConstants.simHashKey, value: currentHash);
+      }
+    } catch (_) {
+      // Silent fail — never block the user for this
+    }
+  }
+
   // ── Worker ────────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> registerWorker(Map<String, dynamic> data) async {
@@ -292,6 +342,15 @@ class ApiService {
     return res.data;
   }
 
+  Future<Map<String, dynamic>> getAdminAnalytics() async {
+    final res = await _dio.get('/admin/analytics');
+    return res.data;
+  }
+
+
+  Future<void> deleteAccount() async {
+    await _dio.delete('/workers/me');
+  }
 
   // ── Notifications ─────────────────────────────────────────────────────────
 

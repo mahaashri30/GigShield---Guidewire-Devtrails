@@ -10,26 +10,20 @@ import json
 from datetime import datetime, timezone, timedelta
 from app.workers.celery_app import celery_app
 
-async def _get_cities_to_poll() -> list[tuple[str, str]]:
+async def _get_cities_to_poll() -> list[tuple[str, str, float, float]]:
     """
     Dynamically builds the city poll list from the DB — covers every city
     where at least one active worker exists, anywhere in India.
-
-    Resolution order per city:
-      1. Worker's own registered pincode (already in DB — no API call needed)
-      2. PositionStack geocoding (if pincode looks incomplete)
-      3. Hardcoded fallback in geocoding_service._FALLBACK_PINCODES
-
-    This means a worker in a village in Rajasthan or a tier-4 town is
-    automatically included the moment they register — no code change needed.
+    Returns list of (city, pincode, lat, lng) tuples.
+    lat/lng resolved via geocoding_service — used by TomTom traffic API
+    so traffic works for any Indian city, not just hardcoded ones.
     """
     from app.database import AsyncSessionLocal
-    from sqlalchemy import select, func
+    from sqlalchemy import select
     from app.models.models import Worker, Policy, PolicyStatus
     from app.services.geocoding_service import resolve_city
 
     async with AsyncSessionLocal() as db:
-        # Distinct (city, pincode) pairs from workers who have an active policy
         rows = await db.execute(
             select(Worker.city, Worker.pincode)
             .join(Policy, Policy.worker_id == Worker.id)
@@ -41,21 +35,21 @@ async def _get_cities_to_poll() -> list[tuple[str, str]]:
         )
         worker_locations = rows.all()
 
-    # Deduplicate by city (use first pincode seen per city)
-    city_map: dict[str, str] = {}
+    city_map: dict[str, tuple] = {}
     for city, pincode in worker_locations:
         if not city:
             continue
         city_key = city.strip().lower()
         if city_key not in city_map:
-            # Use worker's own pincode if it looks valid (6 digits)
             if pincode and len(pincode.strip()) == 6 and pincode.strip().isdigit():
-                city_map[city_key] = (city.strip(), pincode.strip())
+                resolved_pincode, lat, lng = await resolve_city(city.strip())
+                # Use worker's own pincode but geocoded lat/lng
+                final_pincode = pincode.strip() if pincode.strip() != "000000" else resolved_pincode
+                city_map[city_key] = (city.strip(), final_pincode, lat, lng)
             else:
-                # Geocode to get a valid pincode
-                resolved_pincode, _, _ = await resolve_city(city.strip())
+                resolved_pincode, lat, lng = await resolve_city(city.strip())
                 if resolved_pincode != "000000":
-                    city_map[city_key] = (city.strip(), resolved_pincode)
+                    city_map[city_key] = (city.strip(), resolved_pincode, lat, lng)
 
     result = list(city_map.values())
     print(f"[Tasks] Polling {len(result)} cities derived from active workers in DB")
@@ -67,7 +61,7 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-async def _poll_and_store_disruptions(city: str, pincode: str, db) -> list:
+async def _poll_and_store_disruptions(city: str, pincode: str, db, lat: float = 0.0, lng: float = 0.0) -> list:
     """Check disruptions for a city, persist new events, return created event IDs."""
     from sqlalchemy import select
     from app.models.models import DisruptionEvent
@@ -93,7 +87,7 @@ async def _poll_and_store_disruptions(city: str, pincode: str, db) -> list:
                 ev.is_active = False
                 ev.ended_at = now
 
-    events_data = await check_disruptions(city=city, pincode=pincode)
+    events_data = await check_disruptions(city=city, pincode=pincode, lat=lat, lng=lng)
     created_ids = []
 
     for e in events_data:
@@ -139,7 +133,7 @@ async def _auto_claim_for_event(event_id: str, city: str, db):
     from datetime import timedelta
     from app.models.models import (
         Worker, Policy, Claim, DisruptionEvent, Payout,
-        PolicyStatus, ClaimStatus, PayoutStatus,
+        WorkerLocationPing, PolicyStatus, ClaimStatus, PayoutStatus,
     )
     from app.services.premium_service import calculate_payout, MAX_DAILY_PAYOUT, MAX_WEEKLY_PAYOUT
     from app.services.fraud_service import calculate_fraud_score
@@ -216,12 +210,24 @@ async def _auto_claim_for_event(event_id: str, city: str, db):
         )
         claims_this_week = count_result.scalar() or 0
 
+        # Check if worker had GPS pings during the disruption window
+        # (proxy for platform activity — worker was out delivering)
+        ping_window_start = event.started_at - timedelta(hours=1)
+        ping_result = await db.execute(
+            select(func.count()).select_from(WorkerLocationPing).where(
+                WorkerLocationPing.worker_id == worker.id,
+                WorkerLocationPing.recorded_at >= ping_window_start,
+                WorkerLocationPing.recorded_at <= event.started_at + timedelta(hours=2),
+            )
+        )
+        was_platform_active = (ping_result.scalar() or 0) > 0
+
         fraud_result = calculate_fraud_score(
             worker_city=worker.city,
             event_city=event.city,
             worker_pincode=worker.pincode,
             event_pincode=event.pincode or "",
-            was_platform_active=True,  # auto-triggered = worker was active
+            was_platform_active=was_platform_active,
             claims_this_week=claims_this_week,
             claims_same_event=0,
             event_started_at=event.started_at,
@@ -302,8 +308,8 @@ async def _do_poll_weather():
     async with AsyncSessionLocal() as db:
         total_events = 0
         total_claims = 0
-        for city, pincode in cities:
-            event_ids = await _poll_and_store_disruptions(city, pincode, db)
+        for city, pincode, lat, lng in cities:
+            event_ids = await _poll_and_store_disruptions(city, pincode, db, lat=lat, lng=lng)
             for eid in event_ids:
                 n = await _auto_claim_for_event(eid, city, db)
                 total_claims += n
@@ -627,13 +633,66 @@ def expire_old_policies():
     return result
 
 
+@celery_app.task(name="app.workers.tasks.purge_deleted_accounts")
+def purge_deleted_accounts():
+    """Daily job: permanently purge worker rows whose 30-day grace period has ended."""
+    result = _run(_do_purge_deleted_accounts())
+    print(f"[Celery] Purge deleted accounts: {result}")
+    return result
+
+
+async def _do_purge_deleted_accounts():
+    """
+    Permanently purge anonymised worker rows after 30-day grace period.
+    Financial records (claims, policies, payouts) are kept — they reference
+    worker_id (UUID) which is now fully detached from any PII.
+    """
+    from app.database import AsyncSessionLocal
+    from sqlalchemy import select
+    from app.models.models import Worker, DeletedAccountArchive
+
+    now = datetime.now(timezone.utc)
+    purged = 0
+
+    async with AsyncSessionLocal() as db:
+        # Find workers past grace period
+        result = await db.execute(
+            select(Worker).where(
+                Worker.is_deleted == True,
+                Worker.deletion_requested_at <= now - timedelta(days=30),
+            )
+        )
+        workers = result.scalars().all()
+
+        for worker in workers:
+            # Mark archive as purged
+            archive_result = await db.execute(
+                select(DeletedAccountArchive).where(
+                    DeletedAccountArchive.original_worker_id == worker.id,
+                    DeletedAccountArchive.permanently_purged_at.is_(None),
+                )
+            )
+            archive = archive_result.scalar_one_or_none()
+            if archive:
+                archive.permanently_purged_at = now
+
+            # Hard delete the anonymised worker row
+            # Claims/policies/payouts remain — they are pseudonymised (UUID only)
+            await db.delete(worker)
+            purged += 1
+
+        await db.commit()
+
+    return {"purged": purged}
+
+
 @celery_app.task(name="app.workers.tasks.process_auto_claims")
 def process_auto_claims(disruption_event_id: str, city: str):
     """Manually trigger auto-claims for a specific disruption event."""
     import re
     if not re.fullmatch(r"[0-9a-f\-]{36}", disruption_event_id or ""):
         return {"error": "Invalid disruption_event_id"}
-    valid_cities = {c for c, _ in (_run(_get_cities_to_poll()))}
+    valid_cities = {c for c, _, _, _ in (_run(_get_cities_to_poll()))}
     if city not in valid_cities:
         return {"error": "Invalid city"}
 

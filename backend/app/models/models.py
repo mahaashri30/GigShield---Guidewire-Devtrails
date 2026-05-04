@@ -89,9 +89,12 @@ class Worker(Base):
     last_location_at = Column(DateTime(timezone=True), nullable=True)
     fcm_token = Column(String(200), nullable=True)  # Firebase push token
     # Device fingerprint / SIM-change locking (banking-app style)
-    device_fingerprint = Column(String(200), nullable=True)  # SHA-256 of device ID
-    sim_hash = Column(String(64), nullable=True)              # SHA-256 of SIM serial / ICCID
-    sim_changed_at = Column(DateTime(timezone=True), nullable=True)  # When SIM change was detected
+    device_fingerprint = Column(String(200), nullable=True)
+    sim_hash = Column(String(64), nullable=True)
+    sim_changed_at = Column(DateTime(timezone=True), nullable=True)
+    # Soft delete fields
+    is_deleted = Column(Boolean, default=False, nullable=False)
+    deletion_requested_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -229,6 +232,44 @@ class WorkerNotification(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     worker = relationship("Worker", back_populates="notifications")
+
+
+class DeletedAccountArchive(Base):
+    """
+    Production-level account deletion archive.
+
+    When a worker requests account deletion:
+      1. A snapshot of their PII + financial summary is stored here.
+      2. The worker row is anonymised (PII wiped, is_deleted=True).
+      3. Financial records (claims, policies, payouts) are KEPT but
+         detached from PII — required for actuarial, regulatory, and
+         fraud audit purposes (IRDAI mandates 5-year retention).
+      4. Non-financial data (GPS pings, notifications, FCM) is hard deleted.
+      5. After 30 days, a scheduled job permanently purges the worker row.
+
+    This table is admin-only and never exposed to the worker API.
+    """
+    __tablename__ = "deleted_account_archives"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    original_worker_id = Column(String, nullable=False, index=True)
+    # PII snapshot (encrypted at rest via RDS encryption)
+    phone_hash = Column(String(64), nullable=False)       # SHA-256 of phone — for re-registration block
+    name_redacted = Column(String(20), nullable=False)    # First 2 chars + *** e.g. "Ra***"
+    city = Column(String(100), nullable=True)             # Non-PII, kept for actuarial
+    platform = Column(String(50), nullable=True)          # Non-PII, kept for actuarial
+    # Financial summary (kept for IRDAI 5-year retention)
+    total_policies = Column(Integer, default=0)
+    total_claims = Column(Integer, default=0)
+    total_premium_paid = Column(Float, default=0.0)
+    total_claims_paid = Column(Float, default=0.0)
+    # Deletion metadata
+    deletion_requested_at = Column(DateTime(timezone=True), nullable=False)
+    deletion_reason = Column(String(200), nullable=True)  # Optional reason from user
+    grace_period_ends_at = Column(DateTime(timezone=True), nullable=False)  # 30 days
+    permanently_purged_at = Column(DateTime(timezone=True), nullable=True)  # Set by scheduled job
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 
 
 class Admin(Base):
