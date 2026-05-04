@@ -45,4 +45,4 @@ celery_app.conf.beat_schedule = {
     },
 }
 
-celery_app.conf.timezone = "Asia/Kolkata"
+celery_app.conf.timezone = "UTC"

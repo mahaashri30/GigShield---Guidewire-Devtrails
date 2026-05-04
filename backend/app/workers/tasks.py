@@ -370,6 +370,7 @@ async def _do_daily_batch_settlement():
     from app.services.fraud_service import calculate_fraud_score
     from app.services.payout_service import initiate_upi_payout
     from app.services.notification_service import notify_claim_approved, notify_claim_paid
+    from app.api.claims import active_hours_ratio
 
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(hours=24)
@@ -379,16 +380,22 @@ async def _do_daily_batch_settlement():
     async with AsyncSessionLocal() as db:
 
         # Step 1 — Activate pending policies bought since last batch
+        # Guard: only activate policies created within the last 48hrs to avoid
+        # activating stale zombie pending policies from failed payments.
+        pending_cutoff = now - timedelta(hours=48)
         pending_result = await db.execute(
             select(Policy).where(
                 Policy.status == PolicyStatus.PENDING,
+                Policy.created_at >= pending_cutoff,
             )
         )
         pending_policies = pending_result.scalars().all()
         for p in pending_policies:
+            # Idempotency: only set dates if not already set (handles double-fire)
+            if p.start_date is None:
+                p.start_date = now
+                p.end_date = now + timedelta(days=7)
             p.status = PolicyStatus.ACTIVE
-            p.start_date = now
-            p.end_date = now + timedelta(days=7)
         await db.commit()
         print(f"[Batch] Activated {len(pending_policies)} pending policies")
 
@@ -409,7 +416,46 @@ async def _do_daily_batch_settlement():
         )
         workers = workers_result.scalars().all()
 
+        # Bulk-fetch all GPS pings for active workers in last 24hrs (avoids N+1)
+        worker_ids = [w.id for w in workers]
+        all_pings_result = await db.execute(
+            select(WorkerLocationPing).where(
+                WorkerLocationPing.worker_id.in_(worker_ids),
+                WorkerLocationPing.recorded_at >= window_start,
+            ).order_by(WorkerLocationPing.recorded_at.asc())
+        )
+        all_pings = all_pings_result.scalars().all()
+        pings_by_worker: dict[str, list] = {wid: [] for wid in worker_ids}
+        for ping in all_pings:
+            pings_by_worker[ping.worker_id].append(ping)
+
+        # Bulk-fetch today's claimed amounts per worker (avoids N+1)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        daily_sums_result = await db.execute(
+            select(Claim.worker_id, func.coalesce(func.sum(Claim.approved_amount), 0.0)).where(
+                Claim.worker_id.in_(worker_ids),
+                Claim.status.in_([ClaimStatus.APPROVED, ClaimStatus.PAID]),
+                Claim.created_at >= today_start,
+            ).group_by(Claim.worker_id)
+        )
+        claimed_today_by_worker: dict[str, float] = {row[0]: float(row[1]) for row in daily_sums_result.all()}
+
+        # Bulk-fetch weekly claim counts per worker (avoids N+1)
+        week_ago = now - timedelta(days=7)
+        weekly_counts_result = await db.execute(
+            select(Claim.worker_id, func.count(Claim.id)).where(
+                Claim.worker_id.in_(worker_ids),
+                Claim.created_at >= week_ago,
+            ).group_by(Claim.worker_id)
+        )
+        weekly_counts_by_worker: dict[str, int] = {row[0]: int(row[1]) for row in weekly_counts_result.all()}
+
         for worker in workers:
+          try:
+            # Skip workers scheduled for purge — avoid race with purge_deleted_accounts
+            if worker.is_deleted:
+                continue
+
             # Get worker's active policy
             policy_result = await db.execute(
                 select(Policy).where(
@@ -422,14 +468,8 @@ async def _do_daily_batch_settlement():
             if not policy:
                 continue
 
-            # Get worker's GPS pings from last 24hrs
-            pings_result = await db.execute(
-                select(WorkerLocationPing).where(
-                    WorkerLocationPing.worker_id == worker.id,
-                    WorkerLocationPing.recorded_at >= window_start,
-                ).order_by(WorkerLocationPing.recorded_at.asc())
-            )
-            pings = pings_result.scalars().all()
+            # Get worker's GPS pings from last 24hrs (pre-fetched)
+            pings = pings_by_worker.get(worker.id, [])
 
             # Find disruptions that affected this worker's wards
             for event in events:
@@ -480,29 +520,13 @@ async def _do_daily_batch_settlement():
                 if weekly_remaining <= 0:
                     continue
 
-                today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                today_result = await db.execute(
-                    select(func.coalesce(func.sum(Claim.approved_amount), 0.0)).where(
-                        Claim.worker_id == worker.id,
-                        Claim.status.in_([ClaimStatus.APPROVED, ClaimStatus.PAID]),
-                        Claim.created_at >= today_start,
-                    )
-                )
-                claimed_today = float(today_result.scalar() or 0)
+                claimed_today = claimed_today_by_worker.get(worker.id, 0.0)
                 daily_remaining = max(0.0, MAX_DAILY_PAYOUT[policy.tier] - claimed_today)
                 effective_cap = min(daily_remaining, weekly_remaining)
                 if effective_cap <= 0:
                     continue
 
-                # Fraud scoring
-                week_ago = now - timedelta(days=7)
-                count_result = await db.execute(
-                    select(func.count(Claim.id)).where(
-                        Claim.worker_id == worker.id,
-                        Claim.created_at >= week_ago,
-                    )
-                )
-                claims_this_week = count_result.scalar() or 0
+                claims_this_week = weekly_counts_by_worker.get(worker.id, 0)
 
                 had_suspicious = any(p.is_suspicious for p in pings)
                 latest_ping = pings[-1] if pings else None
@@ -587,7 +611,9 @@ async def _do_daily_batch_settlement():
                         worker_id=worker.id,
                         amount=claim.approved_amount,
                         upi_id=upi_id,
-                        status=PayoutStatus.COMPLETED if payout_result["success"] else PayoutStatus.FAILED,
+                        status=PayoutStatus.COMPLETED if payout_result["success"] else (
+                            PayoutStatus.ROLLED_BACK if payout_result.get("rollback") else PayoutStatus.FAILED
+                        ),
                         razorpay_payout_id=payout_result.get("payout_id"),
                         transaction_ref=payout_result.get("transaction_ref"),
                         completed_at=now if payout_result["success"] else None,
@@ -599,7 +625,15 @@ async def _do_daily_batch_settlement():
                         await notify_claim_paid(db, worker, claim, upi_id,
                                                payout_result.get("transaction_ref", ""))
                         total_payouts += 1
+                    else:
+                        # Payout failed — claim stays APPROVED so it can be retried
+                        print(f"[Batch] Payout FAILED for claim {claim.id} worker {worker.id}: {payout_result.get('error', 'unknown')}")
                     db.add(payout)
+
+          except Exception as e:
+              print(f"[Batch] ERROR processing worker {worker.id}: {e}")
+              await db.rollback()
+              continue
 
         await db.commit()
 

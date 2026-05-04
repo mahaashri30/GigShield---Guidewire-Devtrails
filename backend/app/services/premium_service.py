@@ -245,7 +245,7 @@ def calculate_payout(
 
     Capped at CoL-adjusted daily cap.
     """
-    from app.services.platform_service import get_city_economics
+    from app.services.platform_service import get_city_economics, DEFAULT_SUBSISTENCE
     col_index, subsistence_ratio = get_city_economics(city) if city else (1.0, DEFAULT_SUBSISTENCE)
 
     raw_loss = round(worker_daily_avg * dss_multiplier * active_hours_ratio, 2)
