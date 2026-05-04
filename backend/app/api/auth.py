@@ -39,7 +39,7 @@ async def verify_otp_endpoint(payload: OTPVerify, db: AsyncSession = Depends(get
         and settings.ENVIRONMENT != "production"
         and payload.otp == "123456"
     )
-    if not verify_otp(payload.phone, payload.otp):
+    if not is_dev_mode and not verify_otp(payload.phone, payload.otp):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired OTP",
