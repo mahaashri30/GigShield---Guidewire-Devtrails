@@ -162,7 +162,7 @@ class _ClaimCardState extends State<_ClaimCard>
     final approved = (claim['approved_amount'] as num?)?.toDouble();
     final displayAmount = approved ?? claimed;
     final dss = ((claim['dss_multiplier'] as num?)?.toDouble() ?? 0) * 100;
-    final fraudScore =
+    final eligibilityScore =
         (claim['fraud_score'] as num?)?.toStringAsFixed(0) ?? '0';
     final autoApproved = claim['auto_approved'] as bool? ?? false;
     final date = claim['created_at'] != null
@@ -299,7 +299,7 @@ class _ClaimCardState extends State<_ClaimCard>
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     _Detail(s.dss, '${dss.toInt()}%'),
-                    _Detail(s.fraudScore, '$fraudScore/100'),
+                    _Detail(s.eligibilityScore, '$eligibilityScore/100'),
                     _Detail(s.claimed, '₹${claimed.toStringAsFixed(0)}'),
                   ],
                 ),

@@ -105,14 +105,14 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [AppTheme.primary, Color(0xFF10B981)]),
-              borderRadius: BorderRadius.circular(10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.asset(
+              'assets/images/susanoo_icon.jpg',
+              width: 36,
+              height: 36,
+              fit: BoxFit.cover,
             ),
-            child: const Icon(Icons.admin_panel_settings_rounded, color: Colors.white, size: 20),
           ),
           const SizedBox(width: 12),
           const Column(
