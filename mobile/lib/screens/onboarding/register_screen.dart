@@ -138,7 +138,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: _selectedCity,
+                  initialValue: _selectedCity,
                   decoration:
                       const InputDecoration(hintText: 'Select your city'),
                   items: AppConstants.supportedCities

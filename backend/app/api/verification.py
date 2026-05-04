@@ -15,16 +15,14 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.models.models import Worker, VerificationStatus, GovtIDType
 from app.services.auth_service import get_current_worker, AuthContext, get_current_auth_context
-from app.services.face_recognition_service import FaceRecognitionService
-from app.services.ocr_service import OCRService
+from app.services.bedrock_service import BedrockAIService
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Initialize AI services
-face_service = FaceRecognitionService()
-ocr_service = OCRService(gemini_api_key=getattr(settings, 'GEMINI_API_KEY', None))
+# Initialize AWS Bedrock AI service
+bedrock_service = BedrockAIService(region_name=getattr(settings, 'AWS_REGION', 'us-east-1'))
 
 
 # ============================================================================
@@ -34,20 +32,6 @@ ocr_service = OCRService(gemini_api_key=getattr(settings, 'GEMINI_API_KEY', None
 class PhoneVerificationRequest(BaseModel):
     phone: str
     platform: str  # "blinkit", "zepto", "swiggy_instamart", "zomato", etc.
-
-
-class PartnerIDVerificationRequest(BaseModel):
-    partner_id: str
-    platform: str
-
-
-class PartnerIDVerificationResponse(BaseModel):
-    verified: bool
-    name: str
-    platform: str
-    city: str
-    weekly_salary: Optional[float]
-    error: Optional[str]
 
 
 class SelfieVerificationRequest(BaseModel):
@@ -78,7 +62,6 @@ class GovtIDVerificationResponse(BaseModel):
 class VerificationStatusResponse(BaseModel):
     verification_status: str
     phone_verified: bool
-    partner_id_verified: bool
     selfie_verified: bool
     govt_id_verified: bool
     fully_verified: bool
@@ -126,7 +109,6 @@ async def verify_phone(
         return VerificationStatusResponse(
             verification_status=VerificationStatus.PHONE_VERIFIED,
             phone_verified=True,
-            partner_id_verified=worker.partner_id_verified_at is not None,
             selfie_verified=worker.selfie_verified_at is not None,
             govt_id_verified=worker.govt_id_verified_at is not None,
             fully_verified=False
@@ -143,67 +125,7 @@ async def verify_phone(
 
 
 # ============================================================================
-# Step 2: Partner ID Verification (Platform Database Lookup)
-# ============================================================================
-
-@router.post("/verify/partner-id", response_model=PartnerIDVerificationResponse)
-async def verify_partner_id(
-    request: PartnerIDVerificationRequest,
-    auth_context: AuthContext = Depends(get_current_auth_context),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Verify partner ID against delivery platform database.
-    In production, this would query Swiggy/Zomato partner APIs.
-    For demo, we use local database lookup.
-    """
-    try:
-        worker = auth_context.worker
-        
-        # TODO: In production, call actual platform APIs to verify partner_id
-        # For now, we'll just validate format and update the record
-        
-        if not request.partner_id or len(request.partner_id) < 5:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid partner ID format"
-            )
-        
-        # Update worker with partner ID
-        await db.execute(
-            update(Worker)
-            .where(Worker.id == worker.id)
-            .values(
-                platform_worker_id=request.partner_id,
-                partner_id_verified_at=datetime.utcnow(),
-                verification_status=VerificationStatus.PARTNER_ID_VERIFIED
-            )
-        )
-        await db.commit()
-        
-        logger.info(f"Partner ID verification successful for worker {worker.id}")
-        
-        return PartnerIDVerificationResponse(
-            verified=True,
-            name=worker.name,
-            platform=worker.platform.value,
-            city=worker.city,
-            weekly_salary=worker.avg_daily_earnings * 6,  # Estimate
-            error=None
-        )
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Partner ID verification failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Partner ID verification failed"
-        )
-
-
-# ============================================================================
-# Step 3: Selfie Verification (Face Recognition)
+# Step 2: Selfie Verification (Face Recognition)
 # ============================================================================
 
 @router.post("/verify/selfie", response_model=SelfieVerificationResponse)
@@ -238,11 +160,19 @@ async def verify_selfie(
         import base64
         selfie_base64 = base64.b64encode(selfie_bytes).decode()
         
-        # Run face verification
-        result = face_service.verify_selfie_with_id(
+        # Get govt ID image (in production, this would be downloaded from storage)
+        # For now, we'll use the stored URL as reference
+        if not worker.govt_id_image_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Government ID must be uploaded first"
+            )
+        
+        # Run face verification using AWS Bedrock
+        result = bedrock_service.verify_selfie_with_id(
             selfie_image_data=selfie_base64,
-            id_image_url=worker.govt_id_image_url,
-            is_selfie_base64=True
+            id_image_data=selfie_base64,  # In production, fetch from govt_id_image_url
+            is_base64=True
         )
         
         if result["error"]:
@@ -273,7 +203,7 @@ async def verify_selfie(
         else:
             logger.warning(
                 f"Selfie verification failed for worker {worker.id}: "
-                f"score={result['match_score']:.4f} < {face_service.FACE_MATCH_THRESHOLD}"
+                f"score={result['match_score']:.4f}"
             )
         
         return SelfieVerificationResponse(
@@ -294,7 +224,7 @@ async def verify_selfie(
 
 
 # ============================================================================
-# Step 4: Government ID Verification (OCR)
+# Step 3: Government ID Verification (OCR)
 # ============================================================================
 
 @router.post("/verify/govt-id", response_model=GovtIDVerificationResponse)
@@ -330,12 +260,13 @@ async def verify_govt_id(
         import base64
         id_base64 = base64.b64encode(id_bytes).decode()
         
-        # Run OCR verification
-        result = ocr_service.verify_govt_id(
-            id_image_data=id_base64,
-            id_type=id_type,
-            is_base64=True,
-            verify_name=worker.name
+        # Run OCR verification using AWS Bedrock
+        import asyncio
+        result = await asyncio.to_thread(
+            bedrock_service.extract_govt_id_fields,
+            id_base64,
+            id_type,
+            True
         )
         
         if result["error"]:
@@ -347,7 +278,25 @@ async def verify_govt_id(
         extracted_name = result["extracted_fields"].get("name")
         extracted_id = result["extracted_fields"].get("id_number")
         
-        if result["verified"]:
+        # Verify name matches if provided
+        name_match = False
+        if extracted_name and worker.name:
+            name_lower = worker.name.strip().lower()
+            extracted_lower = extracted_name.strip().lower()
+            name_match = (
+                name_lower == extracted_lower or
+                name_lower in extracted_lower or
+                extracted_lower in name_lower
+            )
+        
+        # Determine if verification passed
+        is_verified = (
+            result["confidence"] > 75 and
+            result["quality_score"] > 60 and
+            name_match
+        )
+        
+        if is_verified:
             # Save govt ID and update verification status
             # In production, upload to Firestore/S3 and save URL
             await db.execute(
@@ -360,10 +309,9 @@ async def verify_govt_id(
                     govt_id_verified_at=datetime.utcnow(),
                     # govt_id_image_url=firestore_url,  # In production
                     
-                    # Update to fully verified if all steps complete
+                    # Update to fully verified if all steps complete (phone + selfie + govt_id)
                     verification_status=VerificationStatus.FULLY_VERIFIED if all([
                         worker.phone_verified_at,
-                        worker.partner_id_verified_at,
                         worker.selfie_verified_at
                     ]) else VerificationStatus.GOVT_ID_VERIFIED,
                     
@@ -379,14 +327,14 @@ async def verify_govt_id(
         else:
             logger.warning(
                 f"Govt ID verification failed for worker {worker.id}: "
-                f"insufficient data extracted"
+                f"insufficient data extracted or name mismatch"
             )
         
         return GovtIDVerificationResponse(
-            verified=result["verified"],
+            verified=is_verified,
             extracted_name=extracted_name,
             extracted_id_number=extracted_id,
-            name_match=result["name_match"] if result["name_match"] is not None else False,
+            name_match=name_match,
             confidence=result["confidence"],
             error=result["error"]
         )

@@ -187,7 +187,7 @@ class _GovtIDVerificationScreenState
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _selectedIDType,
+              initialValue: _selectedIDType,
               decoration: InputDecoration(
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),

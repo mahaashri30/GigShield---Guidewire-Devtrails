@@ -25,7 +25,6 @@ class Platform(str, enum.Enum):
 class VerificationStatus(str, enum.Enum):
     PENDING = "pending"
     PHONE_VERIFIED = "phone_verified"
-    PARTNER_ID_VERIFIED = "partner_id_verified"
     SELFIE_VERIFIED = "selfie_verified"
     GOVT_ID_VERIFIED = "govt_id_verified"
     FULLY_VERIFIED = "fully_verified"
