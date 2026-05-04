@@ -29,6 +29,9 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE disruption_events ADD COLUMN IF NOT EXISTS lng FLOAT",
             "ALTER TABLE disruption_events ADD COLUMN IF NOT EXISTS radius_km FLOAT DEFAULT 5.0",
             "ALTER TABLE workers ADD COLUMN IF NOT EXISTS fcm_token VARCHAR(200)",
+            "ALTER TABLE workers ADD COLUMN IF NOT EXISTS device_fingerprint VARCHAR(200)",
+            "ALTER TABLE workers ADD COLUMN IF NOT EXISTS sim_hash VARCHAR(64)",
+            "ALTER TABLE workers ADD COLUMN IF NOT EXISTS sim_changed_at TIMESTAMPTZ",
             "CREATE TABLE IF NOT EXISTS worker_notifications (id VARCHAR PRIMARY KEY, worker_id VARCHAR REFERENCES workers(id), title VARCHAR(120) NOT NULL, body TEXT NOT NULL, notif_type VARCHAR(40) NOT NULL, ref_id VARCHAR(100), is_read BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT NOW())",
         ]
         for sql in new_columns:
