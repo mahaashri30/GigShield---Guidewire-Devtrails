@@ -50,7 +50,7 @@ async def verify_otp_endpoint(payload: OTPVerify, db: AsyncSession = Depends(get
     is_new = worker is None
 
     if is_new:
-        worker = Worker(phone=payload.phone, name="", platform="zomato", city="", pincode="")
+        worker = Worker(phone=payload.phone, name="", platform="zomato", city="Unknown", pincode="000000")
         db.add(worker)
         await db.commit()
         await db.refresh(worker)

@@ -23,6 +23,7 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
   final _formKey = GlobalKey<FormState>();
   late VideoPlayerController _videoCtrl;
   bool _isAdminMode = false;
+  bool _sending = false;
 
   @override
   void initState() {
@@ -47,30 +48,20 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
 
   void _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_sending) return;
+    setState(() => _sending = true);
 
-    if (_isAdminMode) {
-      try {
+    try {
+      if (_isAdminMode) {
         await ref.read(authProvider.notifier).adminLogin(
               _emailCtrl.text.trim(),
               _passCtrl.text,
             );
         if (mounted) context.go('/admin/dashboard');
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Admin Login Failed: $e'),
-              backgroundColor: AppTheme.danger,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
+        return;
       }
-      return;
-    }
 
-    final phone = '+91${_phoneCtrl.text.trim()}';
-    try {
+      final phone = '+91${_phoneCtrl.text.trim()}';
       await ref.read(authProvider.notifier).sendOtp(phone);
       if (mounted) {
         context.push('/auth/otp', extra: {
@@ -82,12 +73,14 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text(_isAdminMode ? 'Admin Login Failed: $e' : 'Error: $e'),
             backgroundColor: AppTheme.danger,
             behavior: SnackBarBehavior.floating,
           ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _sending = false);
     }
   }
 
@@ -363,7 +356,7 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
                                 ],
                                 const SizedBox(height: 32),
                                 ElevatedButton(
-                                  onPressed: auth.isLoading ? null : _submit,
+                                  onPressed: (auth.isLoading || _sending) ? null : _submit,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.white,
                                     foregroundColor: AppTheme.primary,
