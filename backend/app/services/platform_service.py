@@ -118,6 +118,61 @@ PLATFORM_EARNINGS = {
 DEFAULT_EARNINGS = 700.0
 
 
+async def fetch_platform_activity(
+    phone: str,
+    platform: str,
+    window_start: "datetime",
+    window_end: "datetime",
+) -> dict:
+    """
+    Mock platform activity API — simulates whether a worker was online
+    on their delivery platform during a given time window.
+
+    Real integration (Phase 2):
+      Blinkit/Zepto/Swiggy would return session logs showing when the
+      worker had the app open and was accepting orders.
+
+    Mock logic (deterministic per phone+platform+hour):
+      - Workers are online ~70% of active hours (6am-10pm)
+      - Seed is phone+platform so same worker always gets same pattern
+      - Returns online_minutes and activity_ratio for the window
+    """
+    import asyncio
+    from datetime import timezone
+    await asyncio.sleep(0.05)  # simulate network latency
+
+    seed = int("".join(filter(str.isdigit, phone))[-6:] or "123456")
+    rng = random.Random(seed + hash(platform) % 10000)
+
+    # Calculate window duration in minutes
+    if window_start.tzinfo is None:
+        window_start = window_start.replace(tzinfo=timezone.utc)
+    if window_end.tzinfo is None:
+        window_end = window_end.replace(tzinfo=timezone.utc)
+
+    total_minutes = max(1, int((window_end - window_start).total_seconds() / 60))
+
+    # Mock: worker was online for 60-85% of the window
+    activity_ratio = round(rng.uniform(0.60, 0.85), 3)
+    online_minutes = int(total_minutes * activity_ratio)
+
+    # Simulate occasional fully-offline workers (10% chance — device off / not working)
+    if rng.random() < 0.10:
+        activity_ratio = 0.0
+        online_minutes = 0
+
+    return {
+        "phone": phone,
+        "platform": platform,
+        "window_start": window_start.isoformat(),
+        "window_end": window_end.isoformat(),
+        "total_window_minutes": total_minutes,
+        "online_minutes": online_minutes,
+        "activity_ratio": activity_ratio,
+        "was_active": activity_ratio > 0.0,
+        "source": f"{platform.capitalize()} Partner API (mock)",
+    }
+
 async def fetch_platform_earnings(phone: str, platform: str, city: str = "") -> dict:
     """
     Mock platform API call — returns avg daily earnings for a worker.

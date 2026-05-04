@@ -450,6 +450,17 @@ async def _do_daily_batch_settlement():
         )
         weekly_counts_by_worker: dict[str, int] = {row[0]: int(row[1]) for row in weekly_counts_result.all()}
 
+        # Bulk-fetch 12-week claim history for worker_history_factor (avoids N+1)
+        twelve_weeks_ago = now - timedelta(weeks=12)
+        history_counts_result = await db.execute(
+            select(Claim.worker_id, func.count(Claim.id)).where(
+                Claim.worker_id.in_(worker_ids),
+                Claim.created_at >= twelve_weeks_ago,
+                Claim.status.in_([ClaimStatus.APPROVED, ClaimStatus.PAID]),
+            ).group_by(Claim.worker_id)
+        )
+        history_counts_by_worker: dict[str, int] = {row[0]: int(row[1]) for row in history_counts_result.all()}
+
         for worker in workers:
           try:
             # Skip workers scheduled for purge — avoid race with purge_deleted_accounts
@@ -495,15 +506,19 @@ async def _do_daily_batch_settlement():
 
                 # Worker activity zone infra score — weighted average of all
                 # wards the worker regularly operates in (last 30 days)
-                # More fraud-resistant than real-time pings
+                # Fallback: 0.65 (safe tier-2 average) if scoring fails
                 from app.services.infra_service import get_activity_zone_infra_score
-                activity_infra = await get_activity_zone_infra_score(
-                    worker_id=worker.id,
-                    db=db,
-                    fallback_city=worker.city,
-                    fallback_pincode=worker.pincode,
-                    days=30,
-                )
+                try:
+                    activity_infra = await get_activity_zone_infra_score(
+                        worker_id=worker.id,
+                        db=db,
+                        fallback_city=worker.city,
+                        fallback_pincode=worker.pincode,
+                        days=30,
+                    )
+                except Exception as e:
+                    print(f"[Batch] infra_score fallback for worker {worker.id[:8]}: {e}")
+                    activity_infra = 0.65
 
                 adjusted_dss = round(min(
                     event.dss_multiplier * (0.85 + (activity_infra - 0.30) * (0.55 / 0.70)), 1.0
@@ -527,6 +542,44 @@ async def _do_daily_batch_settlement():
                     continue
 
                 claims_this_week = weekly_counts_by_worker.get(worker.id, 0)
+
+                # ── worker_history_factor from real 12-week claim history ────
+                # High claimers pay more on renewal; low claimers get discount.
+                # Clamped to [0.85, 1.30] to prevent extreme swings.
+                EXPECTED_CLAIMS_12W = 6.0
+                actual_claims_12w = history_counts_by_worker.get(worker.id, 0)
+                if actual_claims_12w == 0:
+                    worker_history_factor = 0.90  # no claims = lower risk
+                else:
+                    worker_history_factor = round(
+                        max(0.85, min(1.30, actual_claims_12w / EXPECTED_CLAIMS_12W)), 3
+                    )
+
+                # ── Platform activity check (mock API) ───────────────────────
+                # Confirms worker was actually online on their delivery platform
+                # during the disruption window — not just GPS-present.
+                # Fallback: if API fails, assume active (activity_ratio=1.0)
+                # so a platform API outage never blocks legitimate payouts.
+                from app.services.platform_service import fetch_platform_activity
+                try:
+                    platform_activity = await fetch_platform_activity(
+                        phone=worker.phone,
+                        platform=worker.platform.value if worker.platform else "zomato",
+                        window_start=event.started_at,
+                        window_end=event.ended_at or now,
+                    )
+                    platform_ratio = platform_activity["activity_ratio"]
+                    was_platform_active = platform_activity["was_active"]
+                except Exception as e:
+                    print(f"[Batch] platform_activity fallback for worker {worker.id[:8]}: {e}")
+                    platform_ratio = 1.0
+                    was_platform_active = True
+
+                # If worker was completely offline on platform during disruption,
+                # skip claim — they weren't losing income.
+                if not was_platform_active:
+                    print(f"[Batch] Worker {worker.id[:8]} skipped — platform inactive during {event.disruption_type.value}")
+                    continue
 
                 had_suspicious = any(p.is_suspicious for p in pings)
                 latest_ping = pings[-1] if pings else None
@@ -556,7 +609,7 @@ async def _do_daily_batch_settlement():
                 payout_data = calculate_payout(
                     worker_daily_avg=worker.avg_daily_earnings,
                     dss_multiplier=adjusted_dss,
-                    active_hours_ratio=effective_hours_ratio,
+                    active_hours_ratio=round(effective_hours_ratio * platform_ratio, 3),
                     tier=policy.tier,
                     existing_claimed_today=claimed_today,
                 )
