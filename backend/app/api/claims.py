@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from app.database import get_db
 from app.models.models import Worker, Policy, Claim, DisruptionEvent, Payout, PolicyStatus, ClaimStatus, PayoutStatus, DisruptionType
 from app.schemas.schemas import ClaimResponse
-from app.services.auth_service import get_current_worker
+from app.services.auth_service import get_current_worker, get_current_auth_context, AuthContext
 from app.services.premium_service import calculate_payout, MAX_DAILY_PAYOUT, MAX_WEEKLY_PAYOUT, get_dynamic_caps
 from app.services.fraud_service import calculate_fraud_score
 from app.services.infra_service import get_infra_adjusted_dss
@@ -33,7 +33,15 @@ CITY_POOLS = {
     "Patna":          [DisruptionType.HEAVY_RAIN, DisruptionType.EXTREME_HEAT, DisruptionType.CIVIC_EMERGENCY],
 }
 
-ACTIVE_HOUR_START = 6
+# Minimum disruption duration (hours) before a claim is valid per type
+# A 1-second rain event cannot block a worker — must persist for meaningful time
+MIN_DISRUPTION_HOURS = {
+    "heavy_rain":         0.5,   # 30 min — roads flood after sustained rain
+    "extreme_heat":       2.0,   # 2 hrs  — heat builds up over time
+    "aqi_spike":          1.0,   # 1 hr   — AQI needs sustained exposure
+    "traffic_disruption": 0.5,   # 30 min — gridlock takes time to form
+    "civic_emergency":    1.0,   # 1 hr   — bandh/curfew has minimum duration
+}
 ACTIVE_HOUR_END = 22
 TOTAL_ACTIVE_HOURS = 16.0
 
@@ -92,8 +100,9 @@ def haversine(lat1, lon1, lat2, lon2):
 async def trigger_claim(
     disruption_event_id: str,
     db: AsyncSession = Depends(get_db),
-    current_worker: Worker = Depends(get_current_worker),
+    auth: AuthContext = Depends(get_current_auth_context),
 ):
+    current_worker = auth.worker
     now = datetime.now(timezone.utc)
 
     # Get active policy with row-level locking to prevent race conditions
@@ -144,7 +153,22 @@ async def trigger_claim(
         event_started_at = event_started_at.replace(tzinfo=timezone.utc)
     
     hours_ratio = active_hours_ratio(event)
-    if hours_ratio <= 0.0:
+
+    # Enforce minimum disruption duration — real mode only
+    # Dev mode skips this so simulate flow works instantly
+    if not auth.is_dev_mode:
+        min_hours = MIN_DISRUPTION_HOURS.get(event.disruption_type.value, 0.5)
+        min_ratio = round(min_hours / TOTAL_ACTIVE_HOURS, 3)
+        if hours_ratio < min_ratio:
+            elapsed_minutes = round((now - event_started_at).total_seconds() / 60, 1)
+            required_minutes = int(min_hours * 60)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Disruption must persist for at least {required_minutes} min before claiming. "
+                       f"Current duration: {elapsed_minutes} min."
+            )
+    # Dev mode: use infra_hours_ratio as floor so payout is still realistic
+    if auth.is_dev_mode and hours_ratio <= 0.0:
         hours_ratio = 0.1
 
     # ── Dark Store Proximity / Ward-level check ─────────────────────────────
