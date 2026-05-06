@@ -21,7 +21,8 @@ CITY_POOLS = {
     "Chennai":        [DisruptionType.HEAVY_RAIN, DisruptionType.EXTREME_HEAT, DisruptionType.CIVIC_EMERGENCY],
     "Hyderabad":      [DisruptionType.HEAVY_RAIN, DisruptionType.EXTREME_HEAT, DisruptionType.TRAFFIC_DISRUPTION, DisruptionType.CIVIC_EMERGENCY],
     "Coimbatore":     [DisruptionType.HEAVY_RAIN, DisruptionType.EXTREME_HEAT, DisruptionType.TRAFFIC_DISRUPTION, DisruptionType.CIVIC_EMERGENCY],
-    "Tiruchirappalli":[DisruptionType.HEAVY_RAIN, DisruptionType.EXTREME_HEAT, DisruptionType.CIVIC_EMERGENCY],
+    "Tiruchirappalli": [DisruptionType.HEAVY_RAIN, DisruptionType.EXTREME_HEAT, DisruptionType.CIVIC_EMERGENCY],
+    "Tiruchchirappalli": [DisruptionType.HEAVY_RAIN, DisruptionType.EXTREME_HEAT, DisruptionType.CIVIC_EMERGENCY],
     "Madurai":        [DisruptionType.HEAVY_RAIN, DisruptionType.EXTREME_HEAT, DisruptionType.CIVIC_EMERGENCY],
     "Salem":          [DisruptionType.HEAVY_RAIN, DisruptionType.EXTREME_HEAT, DisruptionType.CIVIC_EMERGENCY],
     "Pune":           [DisruptionType.HEAVY_RAIN, DisruptionType.TRAFFIC_DISRUPTION, DisruptionType.CIVIC_EMERGENCY],
@@ -184,8 +185,13 @@ async def trigger_claim(
             Claim.disruption_event_id == disruption_event_id,
         )
     )
-    if dup.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Already claimed this disruption event")
+    existing_claim = dup.scalar_one_or_none()
+    if existing_claim:
+        if not auth.is_dev_mode:
+            raise HTTPException(status_code=400, detail="Already claimed this disruption event")
+        # Dev mode: delete old claim so simulate can re-trigger cleanly
+        await db.delete(existing_claim)
+        await db.commit()
 
     # ── Claims history for fraud ──────────────────────────────────────────────
     week_ago = now - timedelta(days=7)
@@ -254,6 +260,14 @@ async def trigger_claim(
         sim_changed=sim_changed,
         had_device_off_gap=had_device_off_gap,
     )
+
+    # Dev mode: bypass fraud checks — always auto-approve for demo
+    if auth.is_dev_mode:
+        fraud_result["auto_approve"] = True
+        fraud_result["auto_reject"] = False
+        fraud_result["fraud_score"] = 0.0
+        fraud_result["flags"] = []
+        fraud_result["flags_json"] = "[]"
 
     # ── Caps ──────────────────────────────────────────────────────────────────
     daily_cap, weekly_cap_dynamic = get_dynamic_caps(policy.tier, current_worker.city)

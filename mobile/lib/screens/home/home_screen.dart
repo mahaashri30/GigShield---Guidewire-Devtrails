@@ -211,52 +211,6 @@ class HomeScreen extends ConsumerWidget {
                       const SizedBox(height: 20),
                     ],
 
-                    // Quick actions
-                    Text(s.quickActions,
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        if (policy == null)
-                          Expanded(
-                              child: _QuickAction(
-                            icon: Icons.add_circle_rounded,
-                            label: s.buyPolicy,
-                            color: AppTheme.primary,
-                            onTap: () => context.go('/policy/buy'),
-                          ))
-                        else
-                          Expanded(
-                              child: _QuickAction(
-                            icon: Icons.shield_rounded,
-                            label: s.renewChangePlan,
-                            color: AppTheme.success,
-                            onTap: () => context.go('/policy'),
-                          )),
-                        if (ref.watch(devModeProvider)) ...[
-                          const SizedBox(width: 12),
-                          Expanded(
-                              child: _QuickAction(
-                            icon: Icons.cloud_rounded,
-                            label: s.simulateEvent,
-                            color: AppTheme.warning,
-                            onTap: () => _simulate(
-                              context,
-                              ref,
-                              s,
-                              (worker['city'] as String?)?.isNotEmpty == true
-                                  ? worker['city'] as String
-                                  : 'Bangalore',
-                              (worker['pincode'] as String?)?.isNotEmpty == true
-                                  ? worker['pincode'] as String
-                                  : '560001',
-                            ),
-                          )),
-                        ],
-                      ],
-                    ),
-
                     // Recent claims
                     if (claims.isNotEmpty) ...[
                       const SizedBox(height: 24),
@@ -356,19 +310,17 @@ class HomeScreen extends ConsumerWidget {
 
   String _friendlyClaimError(Object error, String noActivePolicyText) {
     final text = error.toString();
-    final known = <String>[
-      'No active policy found',
-      'Policy has expired',
-      'Already claimed this disruption event',
-      'Weekly payout cap reached for this policy',
-      'Disruption event is not in your city',
-      'not covered',
-      'Simulation is available only in dev mode',
-    ];
-    for (final item in known) {
-      if (text.contains(item)) {
-        return item == 'No active policy found' ? noActivePolicyText : item;
-      }
+    if (text.contains('No active policy found')) return noActivePolicyText;
+    if (text.contains('Policy has expired')) return 'Your policy has expired. Please renew.';
+    if (text.contains('Already claimed')) return 'You already claimed this disruption event.';
+    if (text.contains('Weekly payout cap')) return 'Weekly payout cap reached for this policy.';
+    if (text.contains('Disruption event is not in your city')) return 'This disruption is not in your city.';
+    if (text.contains('not covered')) return 'This disruption type is not covered in your city pool.';
+    if (text.contains('Simulation is available only in dev mode')) return 'Simulation is only available in dev mode.';
+    if (text.contains('persist for at least')) {
+      final match = RegExp(r'at least (\d+) min').firstMatch(text);
+      final mins = match?.group(1) ?? '30';
+      return 'Disruption must last at least $mins min before claiming.';
     }
     return 'Claim could not be triggered. Please refresh and try again.';
   }
