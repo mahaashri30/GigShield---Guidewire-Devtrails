@@ -218,13 +218,22 @@ class HomeScreen extends ConsumerWidget {
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        Expanded(
-                            child: _QuickAction(
-                          icon: Icons.add_circle_rounded,
-                          label: policy == null ? s.buyPolicy : s.buyPolicy,
-                          color: AppTheme.primary,
-                          onTap: () => context.go('/policy/buy'),
-                        )),
+                        if (policy == null)
+                          Expanded(
+                              child: _QuickAction(
+                            icon: Icons.add_circle_rounded,
+                            label: s.buyPolicy,
+                            color: AppTheme.primary,
+                            onTap: () => context.go('/policy/buy'),
+                          ))
+                        else
+                          Expanded(
+                              child: _QuickAction(
+                            icon: Icons.shield_rounded,
+                            label: s.renewChangePlan,
+                            color: AppTheme.success,
+                            onTap: () => context.go('/policy'),
+                          )),
                         if (ref.watch(devModeProvider)) ...[
                           const SizedBox(width: 12),
                           Expanded(
