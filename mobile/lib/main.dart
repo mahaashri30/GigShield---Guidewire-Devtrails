@@ -58,9 +58,19 @@ class _LocationPermissionWrapperState
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkPermission();
       _checkDeviceFingerprint();
+      // Only ask for location if worker is already logged in
+      // For new users, location is requested after login in ShellScreen
+      _maybeCheckPermission();
     });
+  }
+
+  Future<void> _maybeCheckPermission() async {
+    try {
+      final api = ref.read(apiServiceProvider);
+      final loggedIn = await api.isLoggedIn();
+      if (loggedIn) _checkPermission();
+    } catch (_) {}
   }
 
   Future<void> _checkDeviceFingerprint() async {
