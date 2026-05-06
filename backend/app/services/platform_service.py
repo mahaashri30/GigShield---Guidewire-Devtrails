@@ -71,7 +71,12 @@ CITY_ECONOMICS = {
 DEFAULT_COL = 1.0
 DEFAULT_SUBSISTENCE = 0.42
 
-_GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+_GEMINI_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+]
+_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 _col_cache: dict[str, tuple[float, float]] = {}
 
 
@@ -95,21 +100,24 @@ col_index guide (relative to Tier-2 base = 1.0):
 
 subsistence_ratio: fraction of daily earnings spent on survival needs (0.35-0.60)"""
 
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 100},
+    }
     async with httpx.AsyncClient(timeout=8.0) as client:
-        res = await client.post(
-            f"{_GEMINI_URL}?key={settings.GEMINI_API_KEY}",
-            json={
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"temperature": 0.1, "maxOutputTokens": 100},
-            },
-        )
-        data = res.json()
-        content = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        content = content.replace("```json", "").replace("```", "").strip()
-        parsed = json.loads(content)
-        col = float(parsed["col_index"])
-        sub = float(parsed["subsistence_ratio"])
-        return round(max(0.70, min(1.50, col)), 2), round(max(0.35, min(0.60, sub)), 2)
+        for model in _GEMINI_MODELS:
+            url = _GEMINI_BASE.format(model=model) + f"?key={settings.GEMINI_API_KEY}"
+            res = await client.post(url, json=payload)
+            data = res.json()
+            if "candidates" not in data:
+                continue
+            content = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            content = content.replace("```json", "").replace("```", "").strip()
+            parsed = json.loads(content)
+            col = float(parsed["col_index"])
+            sub = float(parsed["subsistence_ratio"])
+            return round(max(0.70, min(1.50, col)), 2), round(max(0.35, min(0.60, sub)), 2)
+    raise ValueError("All Gemini models unavailable")
 
 
 async def get_city_economics_async(city: str) -> tuple[float, float]:
