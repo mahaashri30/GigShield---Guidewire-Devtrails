@@ -2,11 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:susanoo/providers/locale_provider.dart';
+import 'package:susanoo/providers/app_providers.dart';
+import 'package:susanoo/services/location_service.dart';
 import 'package:susanoo/theme/app_theme.dart';
 
-class ShellScreen extends ConsumerWidget {
+class ShellScreen extends ConsumerStatefulWidget {
   final Widget child;
   const ShellScreen({super.key, required this.child});
+
+  @override
+  ConsumerState<ShellScreen> createState() => _ShellScreenState();
+}
+
+class _ShellScreenState extends ConsumerState<ShellScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      LocationService.startTracking(ref.read(apiServiceProvider));
+    });
+  }
+
+  @override
+  void dispose() {
+    LocationService.stopTracking();
+    super.dispose();
+  }
 
   int _locationIndex(BuildContext context) {
     final loc = GoRouterState.of(context).matchedLocation;
@@ -18,7 +39,7 @@ class ShellScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final idx = _locationIndex(context);
     final s = ref.watch(stringsProvider);
     return Scaffold(
