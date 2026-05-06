@@ -137,42 +137,43 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
       child: Scaffold(
         body: widget.child,
         bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: AppTheme.divider, width: 0.5)),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _NavItem(
-                    icon: Icons.home_rounded,
-                    label: s.home,
-                    active: idx == 0,
-                    onTap: () => context.go('/home')),
-                _NavItem(
-                    icon: Icons.shield_rounded,
-                    label: s.policy,
-                    active: idx == 1,
-                    onTap: () => context.go('/policy')),
-                _NavItem(
-                    icon: Icons.receipt_long_rounded,
-                    label: s.claims,
-                    active: idx == 2,
-                    onTap: () => context.go('/claims')),
-                _NavItem(
-                    icon: Icons.monitor_heart_rounded,
-                    label: s.risk,
-                    active: idx == 3,
-                    onTap: () => context.go('/risk')),
-                _NavItem(
-                    icon: Icons.person_rounded,
-                    label: s.profile,
-                    active: idx == 4,
-                    onTap: () => context.go('/profile')),
-              ],
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(top: BorderSide(color: AppTheme.divider, width: 0.5)),
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _NavItem(
+                      icon: Icons.home_rounded,
+                      label: s.home,
+                      active: idx == 0,
+                      onTap: () => context.go('/home')),
+                  _NavItem(
+                      icon: Icons.shield_rounded,
+                      label: s.policy,
+                      active: idx == 1,
+                      onTap: () => context.go('/policy')),
+                  _NavItem(
+                      icon: Icons.receipt_long_rounded,
+                      label: s.claims,
+                      active: idx == 2,
+                      onTap: () => context.go('/claims')),
+                  _NavItem(
+                      icon: Icons.monitor_heart_rounded,
+                      label: s.risk,
+                      active: idx == 3,
+                      onTap: () => context.go('/risk')),
+                  _NavItem(
+                      icon: Icons.person_rounded,
+                      label: s.profile,
+                      active: idx == 4,
+                      onTap: () => context.go('/profile')),
+                ],
+              ),
             ),
           ),
         ),
