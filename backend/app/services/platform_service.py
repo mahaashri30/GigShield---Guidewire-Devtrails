@@ -1,22 +1,26 @@
 """
-Platform Earnings Service — Mock (Phase 1)
+Platform Earnings Service
 
-Simulates what a real platform partner API would return when queried
-by a delivery worker's registered phone number.
+Phase 1 (current): Worker self-reported baseline + GPS ping proxy.
+  - Worker enters avg_daily_earnings, avg_online_hours, avg_orders_per_day at registration
+  - 15-20 day rolling baseline computed from our own GPS activity data
+  - order_drop_ratio estimated from DSS + disruption type (no platform API needed)
 
-Real integration (Phase 2):
-  - Blinkit  : GET https://partner-api.blinkit.com/v1/earnings?phone={phone}
-  - Zepto    : GET https://partner.zepto.co/api/earnings?phone={phone}
-  - Swiggy   : GET https://partner.swiggy.com/api/v1/worker/earnings?phone={phone}
-  - Zomato   : GET https://hyperpure.zomato.com/partner/api/earnings?phone={phone}
-  - Amazon   : GET https://flex.amazon.in/api/earnings?phone={phone}
-  - BigBasket: GET https://partner.bigbasket.com/api/earnings?phone={phone}
+Phase 2 (B2B agreement required):
+  Formal data-sharing agreement with Blinkit/Zepto/Swiggy needed to access:
+  - Per-order timestamps (accepted_at, delivered_at)
+  - Per-hour earnings breakdown
+  - Online vs active session logs
+  None of these platforms have a public partner API for third-party access.
+  Integration path: ONDC framework or direct B2B MOU with platform.
 
-Each platform returns a weekly settlement summary from which we derive
-avg_daily_earnings = weekly_settlement / active_days_in_week.
-
-Per README persona (Arun Kumar, quick-commerce grocery delivery):
-  Earnings: ₹800–₹1,200/day  |  ₹5,600–₹8,400/week
+Baseline calculation (Phase 1):
+  Uses last 15 active working days of the worker to compute:
+  - avg_hourly_earnings  = avg_daily_earnings / avg_online_hours
+  - avg_orders_per_hour  = avg_orders_per_day / avg_online_hours
+  - normal_earnings_in_window = avg_hourly_earnings x disruption_duration_hours
+  Then compares against estimated actual earnings during disruption
+  using DSS-based order drop model.
 """
 import random
 import asyncio
@@ -192,39 +196,215 @@ def get_col_index(city: str) -> float:
 # Realistic daily earnings ranges per platform (min, max) in ₹
 # Based on Tier-2 city average — multiplied by CoL index at runtime
 PLATFORM_EARNINGS = {
+    # platform: (earnings_range, active_days, online_hours_range, orders_per_day_range)
+    # online_hours = time logged into app (online mode)
+    # orders_per_day = accepted + completed deliveries (active mode)
+    # Quick-commerce (Blinkit/Zepto): short 10-min runs, high order count
+    # Food delivery (Zomato/Swiggy): longer runs, fewer orders
     "blinkit": {
-        "range": (850, 1200),   # 10-min delivery, high order density
+        "range": (850, 1200),
         "active_days": (5, 7),
+        "online_hours": (8.0, 11.0),   # logged in 8-11h/day
+        "orders_per_day": (20, 30),     # 20-30 short runs/day (10-min delivery)
         "label": "Blinkit",
     },
     "zepto": {
-        "range": (800, 1150),   # Similar to Blinkit
+        "range": (800, 1150),
         "active_days": (5, 7),
+        "online_hours": (8.0, 10.5),
+        "orders_per_day": (18, 28),
         "label": "Zepto",
     },
     "swiggy_instamart": {
-        "range": (780, 1100),   # Instamart grocery delivery
+        "range": (780, 1100),
         "active_days": (5, 6),
+        "online_hours": (7.5, 10.0),
+        "orders_per_day": (15, 24),
         "label": "Swiggy Instamart",
     },
     "zomato": {
-        "range": (700, 1050),   # Food delivery, peak hours dependent
+        "range": (700, 1050),
         "active_days": (5, 7),
+        "online_hours": (7.0, 10.0),   # food delivery, peak hours
+        "orders_per_day": (12, 20),     # fewer but longer runs
         "label": "Zomato",
     },
     "amazon": {
-        "range": (750, 1000),   # Amazon Flex, scheduled blocks
+        "range": (750, 1000),
         "active_days": (4, 6),
+        "online_hours": (6.0, 9.0),    # scheduled blocks
+        "orders_per_day": (10, 18),
         "label": "Amazon",
     },
     "bigbasket": {
-        "range": (650, 950),    # Scheduled grocery delivery, lower density
+        "range": (650, 950),
         "active_days": (5, 6),
+        "online_hours": (6.0, 8.5),
+        "orders_per_day": (8, 15),     # scheduled grocery, fewer runs
         "label": "BigBasket",
     },
 }
 
 DEFAULT_EARNINGS = 700.0
+# Default platform activity assumptions (used when worker hasn't set these)
+DEFAULT_ONLINE_HOURS_PER_DAY = 9.0    # hours worker is logged into platform
+DEFAULT_ORDERS_PER_DAY = 18.0         # orders completed on a normal day
+
+# Order drop % during disruption by type and severity
+# Based on real-world delivery platform data patterns:
+# Heavy rain = customers order MORE food but roads slow = fewer completions
+# Extreme heat = customers order more cold drinks but workers slow down
+# AQI = workers avoid going out, order volume drops
+# Traffic = roads blocked, completion rate drops sharply
+# Civic = full shutdown in affected areas
+ORDER_DROP_RATE = {
+    "heavy_rain": {
+        "moderate": 0.20,  # 20% fewer orders completed
+        "severe":   0.45,  # 45% fewer
+        "extreme":  0.75,  # 75% fewer — roads flooded
+    },
+    "extreme_heat": {
+        "moderate": 0.10,
+        "severe":   0.25,
+        "extreme":  0.50,
+    },
+    "aqi_spike": {
+        "moderate": 0.10,
+        "severe":   0.30,
+        "extreme":  0.55,
+    },
+    "traffic_disruption": {
+        "moderate": 0.25,
+        "severe":   0.50,
+        "extreme":  0.70,
+    },
+    "civic_emergency": {
+        "moderate": 0.40,
+        "severe":   0.70,
+        "extreme":  0.95,
+    },
+}
+
+
+async def get_worker_baseline(
+    worker_id: str,
+    db,
+    avg_daily_earnings: float,
+    avg_online_hours: float = DEFAULT_ONLINE_HOURS_PER_DAY,
+    avg_orders_per_day: float = DEFAULT_ORDERS_PER_DAY,
+    days: int = 15,
+) -> dict:
+    """
+    Compute worker's normal hourly baseline from last N active working days.
+
+    Uses GPS ping activity as proxy for online hours:
+      - Each ping covers a 10-min window
+      - A day with >= 3 pings = worker was out delivering that day
+      - total_pings x 10min / active_days = estimated online hours/day
+
+    Falls back to worker's self-reported avg_online_hours if GPS data is sparse.
+
+    Phase 2: Replace GPS proxy with actual platform session logs.
+    """
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import select, func
+    from app.models.models import WorkerLocationPing
+
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(days=days)
+
+    result = await db.execute(
+        select(
+            func.date_trunc('day', WorkerLocationPing.recorded_at).label('day'),
+            func.count(WorkerLocationPing.id).label('ping_count'),
+        ).where(
+            WorkerLocationPing.worker_id == worker_id,
+            WorkerLocationPing.recorded_at >= since,
+            WorkerLocationPing.is_suspicious == False,
+        ).group_by(
+            func.date_trunc('day', WorkerLocationPing.recorded_at)
+        )
+    )
+    daily_pings = result.all()
+    active_days = sum(1 for row in daily_pings if row.ping_count >= 3)
+    total_pings = sum(row.ping_count for row in daily_pings if row.ping_count >= 3)
+
+    # Refine online hours from GPS if we have enough data (5+ active days)
+    if active_days >= 5:
+        gps_online_hours = round((total_pings * 10 / 60) / active_days, 2)
+        # Blend GPS estimate with self-reported (GPS is proxy, not exact)
+        # Weight: 60% GPS, 40% self-reported
+        estimated_online_hours = round(
+            max(4.0, min(14.0, gps_online_hours * 0.6 + avg_online_hours * 0.4)), 2
+        )
+        data_source = "gps_proxy_blended"
+    else:
+        # Not enough GPS data — use self-reported value
+        estimated_online_hours = avg_online_hours
+        data_source = "self_reported"
+
+    avg_hourly_earnings = round(avg_daily_earnings / estimated_online_hours, 2)
+    avg_orders_per_hour = round(avg_orders_per_day / estimated_online_hours, 2)
+
+    return {
+        "avg_daily_earnings":        avg_daily_earnings,
+        "avg_online_hours_per_day":  estimated_online_hours,
+        "avg_hourly_earnings":       avg_hourly_earnings,
+        "avg_orders_per_hour":       avg_orders_per_hour,
+        "avg_orders_per_day":        avg_orders_per_day,
+        "active_days_in_window":     active_days,
+        "baseline_days":             days,
+        "data_source":               data_source,
+    }
+
+
+def compute_income_loss(
+    baseline: dict,
+    disruption_type: str,
+    severity: str,
+    disruption_hours: float,
+) -> dict:
+    """
+    Compute actual income loss during disruption using:
+      1. Worker's normal hourly earnings (from 15-day baseline)
+      2. Order drop rate for this disruption type + severity
+      3. Actual disruption duration
+
+    Formula:
+      normal_earnings_in_window = avg_hourly_earnings x disruption_hours
+      order_drop = ORDER_DROP_RATE[type][severity]
+      estimated_actual_earnings = normal_earnings_in_window x (1 - order_drop)
+      income_loss = normal_earnings_in_window - estimated_actual_earnings
+      income_loss_ratio = income_loss / normal_earnings_in_window
+
+    Example:
+      Worker earns Rs.100/hr normally
+      Severe heavy rain for 3 hours
+      order_drop = 0.45
+      normal_in_window = 100 x 3 = Rs.300
+      actual_in_window = 300 x (1 - 0.45) = Rs.165
+      income_loss = Rs.135
+      income_loss_ratio = 0.45
+    """
+    drop_rate = ORDER_DROP_RATE.get(disruption_type, {}).get(severity, 0.30)
+
+    normal_earnings = round(baseline["avg_hourly_earnings"] * disruption_hours, 2)
+    actual_earnings = round(normal_earnings * (1 - drop_rate), 2)
+    income_loss = round(normal_earnings - actual_earnings, 2)
+    income_loss_ratio = drop_rate  # = 1 - (actual/normal)
+
+    return {
+        "disruption_type":       disruption_type,
+        "severity":              severity,
+        "disruption_hours":      disruption_hours,
+        "normal_earnings":       normal_earnings,
+        "actual_earnings":       actual_earnings,
+        "income_loss":           income_loss,
+        "income_loss_ratio":     income_loss_ratio,
+        "order_drop_rate":       drop_rate,
+        "avg_hourly_earnings":   baseline["avg_hourly_earnings"],
+        "baseline_days_used":    baseline["active_days_in_window"],
+    }
 
 
 async def fetch_platform_activity(
@@ -234,41 +414,57 @@ async def fetch_platform_activity(
     window_end: "datetime",
 ) -> dict:
     """
-    Mock platform activity API — simulates whether a worker was online
-    on their delivery platform during a given time window.
+    Mock platform activity API — returns delivery activity during a disruption window.
 
     Real integration (Phase 2):
-      Blinkit/Zepto/Swiggy would return session logs showing when the
-      worker had the app open and was accepting orders.
+      Blinkit/Zepto/Swiggy return per-order timestamps so we know exactly
+      how many orders the worker accepted+completed during the disruption.
 
-    Mock logic (deterministic per phone+platform+hour):
-      - Workers are online ~70% of active hours (6am-10pm)
-      - Seed is phone+platform so same worker always gets same pattern
-      - Returns online_minutes and activity_ratio for the window
+    Three worker states during disruption:
+      1. STOPPED  — activity_ratio=0.0, orders=0       → full income loss
+      2. REDUCED  — activity_ratio=0.3-0.6, orders low → partial income loss
+      3. NORMAL   — activity_ratio=0.8+, orders normal → minimal/no loss
+
+    Mock logic (deterministic per phone+platform+disruption_hour):
+      - 30% chance worker stopped completely (flood/severe disruption)
+      - 50% chance worker kept working but got fewer orders (reduced demand)
+      - 20% chance worker worked normally (mild disruption, resilient area)
     """
-    import asyncio
     from datetime import timezone
-    await asyncio.sleep(0.05)  # simulate network latency
+    await asyncio.sleep(0.05)
 
     seed = int("".join(filter(str.isdigit, phone))[-6:] or "123456")
     rng = random.Random(seed + hash(platform) % 10000)
 
-    # Calculate window duration in minutes
     if window_start.tzinfo is None:
         window_start = window_start.replace(tzinfo=timezone.utc)
     if window_end.tzinfo is None:
         window_end = window_end.replace(tzinfo=timezone.utc)
 
     total_minutes = max(1, int((window_end - window_start).total_seconds() / 60))
+    normal_orders_per_hour = {"blinkit": 4.5, "zepto": 4.0, "swiggy_instamart": 3.5,
+                              "zomato": 3.0, "amazon": 2.0, "bigbasket": 2.5}.get(platform, 3.0)
+    expected_orders = round(normal_orders_per_hour * total_minutes / 60, 1)
 
-    # Mock: worker was online for 60-85% of the window
-    activity_ratio = round(rng.uniform(0.60, 0.85), 3)
-    online_minutes = int(total_minutes * activity_ratio)
-
-    # Simulate occasional fully-offline workers (10% chance — device off / not working)
-    if rng.random() < 0.10:
+    roll = rng.random()
+    if roll < 0.30:
+        # Stopped completely
         activity_ratio = 0.0
-        online_minutes = 0
+        orders_completed = 0
+        earnings_during = 0.0
+        worker_state = "stopped"
+    elif roll < 0.80:
+        # Reduced — working but fewer orders due to low demand / slow roads
+        activity_ratio = round(rng.uniform(0.25, 0.65), 3)
+        orders_completed = max(0, int(expected_orders * activity_ratio))
+        earnings_during = round(orders_completed * rng.uniform(45, 75), 2)
+        worker_state = "reduced"
+    else:
+        # Normal — disruption didn't affect this worker much
+        activity_ratio = round(rng.uniform(0.80, 1.0), 3)
+        orders_completed = max(1, int(expected_orders * activity_ratio))
+        earnings_during = round(orders_completed * rng.uniform(55, 80), 2)
+        worker_state = "normal"
 
     return {
         "phone": phone,
@@ -276,22 +472,32 @@ async def fetch_platform_activity(
         "window_start": window_start.isoformat(),
         "window_end": window_end.isoformat(),
         "total_window_minutes": total_minutes,
-        "online_minutes": online_minutes,
         "activity_ratio": activity_ratio,
+        "orders_completed": orders_completed,
+        "earnings_during_window": earnings_during,
+        "expected_orders": expected_orders,
+        "worker_state": worker_state,
         "was_active": activity_ratio > 0.0,
         "source": f"{platform.capitalize()} Partner API (mock)",
     }
 
 async def fetch_platform_earnings(phone: str, platform: str, city: str = "") -> dict:
     """
-    Mock platform API call — returns avg daily earnings for a worker.
-    Earnings are adjusted by city Cost of Living index.
-    Mumbai Blinkit rider earns ~45% more than Jaipur Blinkit rider.
+    Mock platform earnings — returns avg daily earnings, online hours,
+    and orders per day for a worker based on their platform.
+
+    Online hours  = time worker is logged into the platform app (online mode)
+    Orders per day = accepted + completed deliveries (active mode)
+
+    Phase 2: Replace with actual B2B partner API call.
     """
     await asyncio.sleep(0.3)
 
     config = PLATFORM_EARNINGS.get(platform)
     col = get_col_index(city) if city else DEFAULT_COL
+
+    seed = int("".join(filter(str.isdigit, phone))[-6:] or "123456")
+    rng = random.Random(seed + hash(platform) % 10000)
 
     if not config:
         base = round(DEFAULT_EARNINGS * col, 2)
@@ -300,18 +506,17 @@ async def fetch_platform_earnings(phone: str, platform: str, city: str = "") -> 
             "phone": phone,
             "city": city,
             "avg_daily_earnings": base,
+            "avg_online_hours_per_day": DEFAULT_ONLINE_HOURS_PER_DAY,
+            "avg_orders_per_day": DEFAULT_ORDERS_PER_DAY,
             "weekly_settlement": round(base * 6, 2),
             "active_days_last_week": 6,
+            "active_days_30": 22,
             "col_index": col,
             "source": "default",
             "verified": False,
         }
 
-    seed = int("".join(filter(str.isdigit, phone))[-6:] or "123456")
-    rng = random.Random(seed + hash(platform) % 10000)
-
     low, high = config["range"]
-    # Apply CoL multiplier to earnings range
     avg_daily = round(rng.uniform(low, high) * col, 2)
 
     day_low, day_high = config["active_days"]
@@ -319,12 +524,21 @@ async def fetch_platform_earnings(phone: str, platform: str, city: str = "") -> 
     active_days_30 = rng.randint(active_days_week * 3, active_days_week * 4)
     weekly_settlement = round(avg_daily * active_days_week, 2)
 
+    # Online hours and orders — deterministic per worker phone+platform
+    oh_low, oh_high = config["online_hours"]
+    avg_online_hours = round(rng.uniform(oh_low, oh_high), 1)
+
+    ord_low, ord_high = config["orders_per_day"]
+    avg_orders = round(rng.uniform(ord_low, ord_high), 1)
+
     return {
         "platform": platform,
         "platform_label": config["label"],
         "phone": phone,
         "city": city,
         "avg_daily_earnings": avg_daily,
+        "avg_online_hours_per_day": avg_online_hours,
+        "avg_orders_per_day": avg_orders,
         "weekly_settlement": weekly_settlement,
         "active_days_last_week": active_days_week,
         "active_days_30": active_days_30,

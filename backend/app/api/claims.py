@@ -299,8 +299,38 @@ async def trigger_claim(
         had_device_off_gap=had_device_off_gap,
     )
 
-    # Dynamic caps based on city Cost of Living
-    daily_cap, weekly_cap_dynamic = get_dynamic_caps(policy.tier, current_worker.city)
+    # ── Platform activity during disruption window ──────────────────────────
+    # Phase 1: Use 15-day GPS baseline + DSS-based order drop model
+    # Phase 2: Replace with actual Blinkit/Zepto/Swiggy partner API
+    from app.services.platform_service import get_worker_baseline, compute_income_loss, DEFAULT_ONLINE_HOURS_PER_DAY, DEFAULT_ORDERS_PER_DAY
+
+    baseline = await get_worker_baseline(
+        worker_id=current_worker.id,
+        db=db,
+        avg_daily_earnings=current_worker.avg_daily_earnings,
+        avg_online_hours=current_worker.avg_online_hours_per_day or DEFAULT_ONLINE_HOURS_PER_DAY,
+        avg_orders_per_day=current_worker.avg_orders_per_day or DEFAULT_ORDERS_PER_DAY,
+    )
+
+    disruption_hours = max(0.1, (now - event_started_at).total_seconds() / 3600)
+    if auth.is_dev_mode:
+        # Dev mode: use infra_hours_ratio as realistic disruption duration
+        disruption_hours = infra_hours_ratio * TOTAL_ACTIVE_HOURS
+
+    income_loss_data = compute_income_loss(
+        baseline=baseline,
+        disruption_type=event.disruption_type.value,
+        severity=event.severity.value,
+        disruption_hours=disruption_hours,
+    )
+    income_loss_ratio = income_loss_data["income_loss_ratio"]
+
+    print(f"[Claims] baseline={baseline['avg_hourly_earnings']}/hr "
+          f"drop={income_loss_ratio} "
+          f"loss=Rs.{income_loss_data['income_loss']} "
+          f"baseline_days={baseline['active_days_in_window']}")
+
+
     weekly_cap = weekly_cap_dynamic
     weekly_claimed = float(policy.total_claimed or 0)
     weekly_remaining = max(0.0, weekly_cap - weekly_claimed)
@@ -358,7 +388,7 @@ async def trigger_claim(
     payout_data = calculate_payout(
         worker_daily_avg=current_worker.avg_daily_earnings,
         dss_multiplier=adjusted_dss,
-        active_hours_ratio=effective_hours_ratio,
+        active_hours_ratio=round(effective_hours_ratio * income_loss_ratio, 3),
         tier=policy.tier,
         existing_claimed_today=claimed_today,
     )

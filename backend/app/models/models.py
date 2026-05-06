@@ -82,6 +82,8 @@ class Worker(Base):
     is_verified = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     avg_daily_earnings = Column(Float, default=600.0)
+    avg_online_hours_per_day = Column(Float, default=9.0)   # hours logged into platform app
+    avg_orders_per_day = Column(Float, default=18.0)        # orders accepted+completed on normal day
     active_days_30 = Column(Integer, default=0, nullable=True)  # active delivery days in last 30 days
     risk_score = Column(Float, default=0.5)
     last_known_lat = Column(Float, nullable=True)

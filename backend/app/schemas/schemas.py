@@ -37,6 +37,8 @@ class WorkerCreate(BaseModel):
     upi_id: Optional[str] = None
     platform_worker_id: Optional[str] = None
     avg_daily_earnings: Optional[float] = None
+    avg_online_hours_per_day: Optional[float] = None
+    avg_orders_per_day: Optional[float] = None
 
 class WorkerUpdate(BaseModel):
     name: Optional[str] = None
@@ -54,6 +56,8 @@ class WorkerResponse(BaseModel):
     upi_id: Optional[str]
     is_verified: bool
     avg_daily_earnings: float
+    avg_online_hours_per_day: float
+    avg_orders_per_day: float
     risk_score: float
     created_at: datetime
 

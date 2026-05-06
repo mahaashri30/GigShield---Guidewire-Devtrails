@@ -17,6 +17,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _nameCtrl = TextEditingController();
   final _upiCtrl = TextEditingController();
   final _pincodeCtrl = TextEditingController();
+  final _onlineHoursCtrl = TextEditingController();
+  final _ordersCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   String? _selectedCity;
@@ -28,6 +30,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     _nameCtrl.dispose();
     _upiCtrl.dispose();
     _pincodeCtrl.dispose();
+    _onlineHoursCtrl.dispose();
+    _ordersCtrl.dispose();
     super.dispose();
   }
 
@@ -44,6 +48,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         'city': _selectedCity ?? 'Bangalore',
         'pincode': _pincodeCtrl.text.trim(),
         'upi_id': _upiCtrl.text.trim().isEmpty ? null : _upiCtrl.text.trim(),
+        'avg_online_hours_per_day': double.tryParse(_onlineHoursCtrl.text.trim()),
+        'avg_orders_per_day': double.tryParse(_ordersCtrl.text.trim()),
       });
       await ref.read(authProvider.notifier).completeRegistration();
       if (mounted) context.go('/home');
@@ -251,6 +257,102 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 const Text(
                   '💡 Claims are credited to your UPI within minutes of a disruption.',
                   style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                ),
+
+                const SizedBox(height: 20),
+                // Work pattern — used for accurate income loss calculation
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.success.withOpacity(0.3)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.info_outline_rounded,
+                          size: 14, color: AppTheme.success),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Your work pattern helps us calculate accurate payouts during disruptions.',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.success,
+                              height: 1.4),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Online hours/day',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w600, fontSize: 13)),
+                          const SizedBox(height: 4),
+                          const Text('Hours you stay logged in',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.textSecondary)),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _onlineHoursCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            decoration: const InputDecoration(
+                              hintText: 'e.g. 9',
+                              suffixText: 'hrs',
+                            ),
+                            validator: (v) {
+                              if (v == null || v.trim().isEmpty) return null;
+                              final val = double.tryParse(v.trim());
+                              if (val == null || val < 1 || val > 16)
+                                return '1–16 hrs';
+                              return null;
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Orders/day',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w600, fontSize: 13)),
+                          const SizedBox(height: 4),
+                          const Text('Deliveries completed',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.textSecondary)),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _ordersCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              hintText: 'e.g. 20',
+                              suffixText: 'orders',
+                            ),
+                            validator: (v) {
+                              if (v == null || v.trim().isEmpty) return null;
+                              final val = int.tryParse(v.trim());
+                              if (val == null || val < 1 || val > 60)
+                                return '1–60';
+                              return null;
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
 
                 const SizedBox(height: 40),

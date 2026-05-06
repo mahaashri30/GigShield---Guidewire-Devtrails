@@ -32,7 +32,15 @@ async def register_worker(
         city=payload.city,
     )
     current_worker.avg_daily_earnings = earnings_data["avg_daily_earnings"]
+    current_worker.avg_online_hours_per_day = earnings_data.get("avg_online_hours_per_day", 9.0)
+    current_worker.avg_orders_per_day = earnings_data.get("avg_orders_per_day", 18.0)
     current_worker.active_days_30 = earnings_data.get("active_days_30", 0)
+
+    # Override with worker self-reported values if provided
+    if payload.avg_online_hours_per_day:
+        current_worker.avg_online_hours_per_day = payload.avg_online_hours_per_day
+    if payload.avg_orders_per_day:
+        current_worker.avg_orders_per_day = payload.avg_orders_per_day
 
     # Underwriting rule: minimum 7 active delivery days before cover eligibility
     current_worker.is_verified = current_worker.active_days_30 >= 7

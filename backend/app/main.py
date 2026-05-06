@@ -17,6 +17,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
         # Add new columns if they don't exist (safe migration)
         new_columns = [
+            "ALTER TABLE workers ADD COLUMN IF NOT EXISTS avg_online_hours_per_day FLOAT DEFAULT 9.0",
+            "ALTER TABLE workers ADD COLUMN IF NOT EXISTS avg_orders_per_day FLOAT DEFAULT 18.0",
             "ALTER TABLE workers ADD COLUMN IF NOT EXISTS active_days_30 INTEGER DEFAULT 0",
             "ALTER TABLE workers ADD COLUMN IF NOT EXISTS last_known_lat FLOAT",
             "ALTER TABLE workers ADD COLUMN IF NOT EXISTS last_known_lng FLOAT",
