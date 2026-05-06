@@ -178,7 +178,6 @@ async def calculate_dss(
     """
     from datetime import datetime
     from app.services.infra_service import get_infra_score
-    from app.services.platform_service import get_city_economics
 
     if month is None:
         month = datetime.now().month
@@ -190,7 +189,8 @@ async def calculate_dss(
         infra_score = 0.55
 
     try:
-        col_index, _ = get_city_economics(city)
+        from app.services.platform_service import get_city_economics_async
+        col_index, _ = await get_city_economics_async(city)
     except Exception:
         col_index = 1.0
 

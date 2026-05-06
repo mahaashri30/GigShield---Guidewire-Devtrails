@@ -20,7 +20,11 @@ Per README persona (Arun Kumar, quick-commerce grocery delivery):
 """
 import random
 import asyncio
+import json
+import hashlib
+import httpx
 from typing import Optional
+from app.config import settings
 
 
 # Cost of Living index AND subsistence ratio per city
@@ -67,9 +71,74 @@ CITY_ECONOMICS = {
 DEFAULT_COL = 1.0
 DEFAULT_SUBSISTENCE = 0.42
 
+_GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+_col_cache: dict[str, tuple[float, float]] = {}
+
+
+def _col_cache_key(city: str) -> str:
+    return hashlib.md5(city.lower().encode()).hexdigest()[:8]
+
+
+async def _ai_col(city: str) -> tuple[float, float]:
+    prompt = f"""You are an insurance actuary estimating cost of living for Indian cities.
+
+City: {city}, India
+
+Return ONLY a JSON object:
+{{"col_index": 0.XX, "subsistence_ratio": 0.XX, "reason": "one-line reason"}}
+
+col_index guide (relative to Tier-2 base = 1.0):
+- 1.30-1.50: Metro (Mumbai, Delhi, Bangalore)
+- 1.10-1.29: Large city (Hyderabad, Chennai, Pune)
+- 0.90-1.09: Mid-size city (Jaipur, Lucknow, Coimbatore)
+- 0.75-0.89: Smaller city (Patna, Guwahati, Varanasi)
+
+subsistence_ratio: fraction of daily earnings spent on survival needs (0.35-0.60)"""
+
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        res = await client.post(
+            f"{_GEMINI_URL}?key={settings.GEMINI_API_KEY}",
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0.1, "maxOutputTokens": 100},
+            },
+        )
+        data = res.json()
+        content = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        content = content.replace("```json", "").replace("```", "").strip()
+        parsed = json.loads(content)
+        col = float(parsed["col_index"])
+        sub = float(parsed["subsistence_ratio"])
+        return round(max(0.70, min(1.50, col)), 2), round(max(0.35, min(0.60, sub)), 2)
+
+
+async def get_city_economics_async(city: str) -> tuple[float, float]:
+    """Returns (col_index, subsistence_ratio) — checks static table first, then Gemini AI."""
+    # 1. Static lookup
+    for known, vals in CITY_ECONOMICS.items():
+        if known.lower() in city.lower() or city.lower() in known.lower():
+            return vals
+
+    # 2. In-memory cache
+    key = _col_cache_key(city)
+    if key in _col_cache:
+        return _col_cache[key]
+
+    # 3. Gemini AI
+    try:
+        result = await _ai_col(city)
+        _col_cache[key] = result
+        print(f"[CoL AI] {city} → col={result[0]}, subsistence={result[1]}")
+        return result
+    except Exception as e:
+        print(f"[CoL AI ERROR] {city}: {e}")
+
+    # 4. Default fallback
+    return DEFAULT_COL, DEFAULT_SUBSISTENCE
+
 
 def get_city_economics(city: str) -> tuple[float, float]:
-    """Returns (col_index, subsistence_ratio) for a city."""
+    """Sync version — static lookup only. Use get_city_economics_async in async contexts."""
     for known, vals in CITY_ECONOMICS.items():
         if known.lower() in city.lower() or city.lower() in known.lower():
             return vals
