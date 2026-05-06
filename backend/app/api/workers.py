@@ -154,7 +154,7 @@ async def delete_account(
     # They reference worker_id (a UUID) not the phone/name — so they are
     # already pseudonymised once the PII fields below are wiped.
     current_worker.name             = "[DELETED]"
-    current_worker.phone            = f"deleted_{worker_id[:8]}"
+    current_worker.phone            = f"del_{worker_id[:8]}"
     current_worker.upi_id           = None
     current_worker.bank_account     = None
     current_worker.bank_ifsc        = None

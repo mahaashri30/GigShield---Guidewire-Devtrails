@@ -119,7 +119,8 @@ class ProfileScreen extends ConsumerWidget {
 void _confirmDeleteAccount(BuildContext context, WidgetRef ref) {
   showDialog(
     context: context,
-    builder: (_) => AlertDialog(
+    barrierDismissible: true,
+    builder: (dialogCtx) => AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: const Row(
         children: [
@@ -130,21 +131,22 @@ void _confirmDeleteAccount(BuildContext context, WidgetRef ref) {
         ],
       ),
       content: const Text(
-        'This will permanently delete your account, all policies, claims, and payout history.\n\nThis action cannot be undone.',
+        'Your account will be scheduled for deletion.\n\nPolicies will be cancelled. Financial records are retained for 30 days as required by regulations.',
         style: TextStyle(fontSize: 14, height: 1.5),
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.pop(dialogCtx), // use dialogCtx not context
           child: const Text('Cancel',
               style: TextStyle(color: AppTheme.textSecondary)),
         ),
         ElevatedButton(
           onPressed: () async {
-            Navigator.pop(context);
+            Navigator.pop(dialogCtx); // close dialog first using dialogCtx
             try {
               await ref.read(apiServiceProvider).deleteAccount();
               await ref.read(authProvider.notifier).logout();
+              // Use context only after dialog is fully closed
               if (context.mounted) context.go('/auth/phone');
             } catch (e) {
               if (context.mounted) {
