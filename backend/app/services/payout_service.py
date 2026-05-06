@@ -18,7 +18,7 @@ def _get_client() -> razorpay.Client:
 
 
 def _is_mock() -> bool:
-    return not settings.RAZORPAY_KEY_ID or settings.RAZORPAY_KEY_ID.startswith("rzp_test_mock")
+    return not settings.RAZORPAY_KEY_ID or not settings.RAZORPAY_KEY_ID.startswith("rzp_live_")
 
 
 async def send_payout_sms(phone: str, amount: float, upi_id: str, transaction_ref: str, disruption: str) -> bool:

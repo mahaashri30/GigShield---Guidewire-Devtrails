@@ -11,6 +11,7 @@ computed once per event and stored in DisruptionEvent.dss_multiplier.
 All downstream code (batch settlement, claims) just reads the stored value.
 """
 import os
+from typing import Optional
 import numpy as np
 import joblib
 from app.models.models import DisruptionType, DisruptionSeverity
@@ -126,7 +127,7 @@ def _ml_dss(
     col_index: float,
     pop_density: float,
     month: int,
-) -> float | None:
+) -> Optional[float]:
     if not _ml_available:
         return None
     try:
