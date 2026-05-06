@@ -211,6 +211,45 @@ class HomeScreen extends ConsumerWidget {
                       const SizedBox(height: 20),
                     ],
 
+                    // Simulate button — dev mode only
+                    if (ref.watch(devModeProvider)) ...[
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.cloud_rounded,
+                              color: AppTheme.warning, size: 18),
+                          label: Text(
+                            s.simulateEvent,
+                            style: const TextStyle(
+                                color: AppTheme.warning,
+                                fontWeight: FontWeight.w600),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(
+                                color: AppTheme.warning.withOpacity(0.5)),
+                            backgroundColor:
+                                AppTheme.warning.withOpacity(0.06),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14)),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          onPressed: () => _simulate(
+                            context,
+                            ref,
+                            s,
+                            (worker['city'] as String?)?.isNotEmpty == true
+                                ? worker['city'] as String
+                                : 'Bangalore',
+                            (worker['pincode'] as String?)?.isNotEmpty == true
+                                ? worker['pincode'] as String
+                                : '560001',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                    ],
+
                     // Recent claims
                     if (claims.isNotEmpty) ...[
                       const SizedBox(height: 24),
