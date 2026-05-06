@@ -45,10 +45,11 @@ async def update_worker_grid(
 ) -> Optional[dict]:
     """
     Rebuild the worker's delivery grid from last N days of clean GPS pings.
-    Called on every non-suspicious ping.
+    Only uses ACTIVE DELIVERY DAYS — days where the worker had 3+ pings,
+    meaning they were actually out delivering (not holidays or days off).
 
-    Returns the updated grid stats or None if not enough pings.
-    Minimum 5 pings needed to build a meaningful grid.
+    A day with < 3 pings = worker was not delivering that day → excluded.
+    This ensures the grid reflects actual delivery zones, not home/rest locations.
     """
     from sqlalchemy import select, func, cast, Date
     from app.models.models import WorkerLocationPing, WorkerDeliveryGrid
@@ -56,7 +57,31 @@ async def update_worker_grid(
     now = datetime.now(timezone.utc)
     since = now - timedelta(days=days)
 
-    # Fetch all clean pings in last N days
+    # Step 1: Find active delivery days (days with 3+ clean pings)
+    day_col = cast(WorkerLocationPing.recorded_at, Date)
+    active_days_result = await db.execute(
+        select(
+            day_col.label('day'),
+            func.count(WorkerLocationPing.id).label('ping_count'),
+        ).where(
+            WorkerLocationPing.worker_id == worker_id,
+            WorkerLocationPing.recorded_at >= since,
+            WorkerLocationPing.is_suspicious == False,
+            WorkerLocationPing.lat.isnot(None),
+            WorkerLocationPing.lng.isnot(None),
+        ).group_by(day_col)
+    )
+    daily_counts = active_days_result.all()
+
+    # Only keep days with 3+ pings = actually delivering
+    # < 3 pings = holiday, sick day, or just opened app briefly
+    active_delivery_days = {row.day for row in daily_counts if row.ping_count >= 3}
+    active_days_count = len(active_delivery_days)
+
+    if active_days_count == 0 or len(active_delivery_days) * 6 < 5:
+        return None  # Not enough active delivery data yet
+
+    # Step 2: Fetch pings ONLY from active delivery days
     result = await db.execute(
         select(
             WorkerLocationPing.lat,
@@ -70,12 +95,13 @@ async def update_worker_grid(
             WorkerLocationPing.is_suspicious == False,
             WorkerLocationPing.lat.isnot(None),
             WorkerLocationPing.lng.isnot(None),
+            day_col.in_(list(active_delivery_days)),  # only active days
         ).order_by(WorkerLocationPing.recorded_at.asc())
     )
     pings = result.all()
 
     if len(pings) < 5:
-        return None  # Not enough data yet
+        return None
 
     lats = [p.lat for p in pings]
     lngs = [p.lng for p in pings]
@@ -108,17 +134,8 @@ async def update_worker_grid(
     p90_radius_km = max(0.5, p90_radius_km)
     radius_km = max(0.5, radius_km)
 
-    # ── Active days ───────────────────────────────────────────────────────────
-    active_days_result = await db.execute(
-        select(func.count(func.distinct(cast(
-            WorkerLocationPing.recorded_at, Date
-        )))).where(
-            WorkerLocationPing.worker_id == worker_id,
-            WorkerLocationPing.recorded_at >= since,
-            WorkerLocationPing.is_suspicious == False,
-        )
-    )
-    active_days = active_days_result.scalar() or 0
+    # ── Active days (already computed above) ───────────────────────────────
+    active_days = active_days_count
 
     # ── Dominant city + pincode (most frequent) ───────────────────────────────
     city_counts: dict[str, int] = {}
