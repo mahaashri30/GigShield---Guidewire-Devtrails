@@ -7,6 +7,8 @@ Celery tasks — Phase 2: Fully implemented automated triggers
 """
 import asyncio
 import json
+import os
+import sys
 from datetime import datetime, timezone, timedelta
 from app.workers.celery_app import celery_app
 
@@ -340,6 +342,26 @@ async def _do_expire_policies():
             p.status = PolicyStatus.EXPIRED
         await db.commit()
         return {"expired": len(expired)}
+
+
+@celery_app.task(name="app.workers.tasks.retrain_premium_model")
+def retrain_premium_model():
+    """
+    Weekly auto-retrain of the premium engine — runs every Sunday 3:30am IST.
+    Blends real claims from DB with synthetic data + real weather risk factors.
+    Model improves automatically as real claims accumulate.
+    """
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../"))
+        from ml.premium_engine.train import run_auto_retrain
+        metrics = run_auto_retrain()
+        print(f"[Celery] Premium model retrained — MAE=₹{metrics['mae']:.2f} "
+              f"R²={metrics['r2']:.4f} "
+              f"real_claims={metrics['real_claims_rows']}")
+        return metrics
+    except Exception as e:
+        print(f"[Celery] Premium retrain FAILED: {e}")
+        return {"error": str(e)}
 
 
 @celery_app.task(name="app.workers.tasks.daily_batch_settlement")

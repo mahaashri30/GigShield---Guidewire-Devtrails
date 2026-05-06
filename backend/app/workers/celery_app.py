@@ -37,6 +37,13 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.expire_old_policies",
         "schedule": crontab(hour=21, minute=0),  # 21:00 UTC = 2:30am IST
     },
+    # ── Premium model auto-retrain: every Sunday 3:30am IST ────────────────
+    # Blends real claims from DB with synthetic + real weather risk factors
+    # Model improves automatically as real claims accumulate
+    "retrain-premium-model": {
+        "task": "app.workers.tasks.retrain_premium_model",
+        "schedule": crontab(hour=22, minute=0, day_of_week=0),  # Sunday 22:00 UTC = 3:30am IST
+    },
     # ── Deleted account purge: daily 3:30am IST ───────────────────────────
     # Permanently removes anonymised worker rows after 30-day grace period
     "purge-deleted-accounts": {

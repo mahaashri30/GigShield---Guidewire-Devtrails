@@ -37,6 +37,7 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE workers ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE NOT NULL",
             "ALTER TABLE workers ADD COLUMN IF NOT EXISTS deletion_requested_at TIMESTAMPTZ",
             "CREATE TABLE IF NOT EXISTS worker_notifications (id VARCHAR PRIMARY KEY, worker_id VARCHAR REFERENCES workers(id), title VARCHAR(120) NOT NULL, body TEXT NOT NULL, notif_type VARCHAR(40) NOT NULL, ref_id VARCHAR(100), is_read BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT NOW())",
+            "CREATE TABLE IF NOT EXISTS worker_delivery_grids (id VARCHAR PRIMARY KEY, worker_id VARCHAR REFERENCES workers(id) UNIQUE, bbox_lat_min FLOAT, bbox_lat_max FLOAT, bbox_lng_min FLOAT, bbox_lng_max FLOAT, center_lat FLOAT, center_lng FLOAT, radius_km FLOAT, p90_radius_km FLOAT, ping_count INTEGER DEFAULT 0, active_days INTEGER DEFAULT 0, dominant_pincode VARCHAR(10), dominant_city VARCHAR(100), first_ping_at TIMESTAMPTZ, last_ping_at TIMESTAMPTZ, updated_at TIMESTAMPTZ DEFAULT NOW())",
         ]
         for sql in new_columns:
             try:

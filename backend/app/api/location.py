@@ -16,6 +16,7 @@ from math import radians, sin, cos, sqrt, atan2
 from app.database import get_db
 from app.models.models import Worker, WorkerLocationPing
 from app.services.auth_service import get_current_worker
+from app.services.grid_service import update_worker_grid
 
 router = APIRouter()
 
@@ -219,6 +220,17 @@ async def location_ping(
 
     await db.commit()
 
+    # ── Update delivery grid (non-suspicious pings only) ──────────────────────
+    # Grid builds gradually — after 5+ pings it starts being useful
+    # After 60+ pings (1 week) it's reliable enough for claims proximity checks
+    grid_stats = None
+    if not is_suspicious:
+        try:
+            grid_stats = await update_worker_grid(worker_id=current_worker.id, db=db)
+            await db.commit()
+        except Exception as e:
+            print(f"[Grid] Failed to update grid for worker {current_worker.id}: {e}")
+
     return {
         "status": "recorded",
         "city_detected": city_detected,
@@ -228,6 +240,12 @@ async def location_ping(
         "is_suspicious": is_suspicious,
         "flags": flags,
         "message": ("Security alert: " + ", ".join(flags)) if flags else "Location recorded",
+        "grid": {
+            "ping_count":    grid_stats["ping_count"] if grid_stats else 0,
+            "active_days":   grid_stats["active_days"] if grid_stats else 0,
+            "p90_radius_km": grid_stats["p90_radius_km"] if grid_stats else None,
+            "dominant_city": grid_stats["dominant_city"] if grid_stats else None,
+        } if grid_stats else None,
     }
 
 

@@ -200,6 +200,56 @@ class Payout(Base):
     claim = relationship("Claim", back_populates="payout")
 
 
+class WorkerDeliveryGrid(Base):
+    """
+    Worker's personal delivery grid — built gradually from GPS pings.
+    Represents the actual area the worker delivers in, not just their
+    registered city/pincode.
+
+    Updated on every GPS ping (non-suspicious only).
+    Used for:
+      - Proximity check in claims (is disruption inside worker's grid?)
+      - Premium zone_risk (worker's actual delivery zone risk, not city average)
+      - Fraud detection (claim from outside usual delivery area)
+
+    Grid fields:
+      bbox_*     : bounding box (min/max lat/lng) — fast containment check
+      center_*   : centroid of all pings — worker's "home base"
+      radius_km  : radius of delivery area from centroid
+      ping_count : total non-suspicious pings used to build this grid
+      active_days: distinct days with pings (proxy for working days)
+    """
+    __tablename__ = "worker_delivery_grids"
+
+    id          = Column(String, primary_key=True, default=gen_uuid)
+    worker_id   = Column(String, ForeignKey("workers.id"), nullable=False, unique=True)
+    # Bounding box
+    bbox_lat_min = Column(Float, nullable=True)
+    bbox_lat_max = Column(Float, nullable=True)
+    bbox_lng_min = Column(Float, nullable=True)
+    bbox_lng_max = Column(Float, nullable=True)
+    # Centroid
+    center_lat  = Column(Float, nullable=True)
+    center_lng  = Column(Float, nullable=True)
+    # Delivery radius from centroid (km)
+    radius_km   = Column(Float, nullable=True)
+    # P90 radius — 90% of pings fall within this distance from centroid
+    # More robust than max radius (ignores outlier pings)
+    p90_radius_km = Column(Float, nullable=True)
+    # Stats
+    ping_count  = Column(Integer, default=0)
+    active_days = Column(Integer, default=0)
+    # Dominant pincode and city (most frequent in pings)
+    dominant_pincode = Column(String(10), nullable=True)
+    dominant_city    = Column(String(100), nullable=True)
+    # Timestamps
+    first_ping_at = Column(DateTime(timezone=True), nullable=True)
+    last_ping_at  = Column(DateTime(timezone=True), nullable=True)
+    updated_at    = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    worker = relationship("Worker", backref="delivery_grid")
+
+
 class WorkerLocationPing(Base):
     """Stores worker GPS pings every 10 min during active hours for anti-spoofing."""
     __tablename__ = "worker_location_pings"
