@@ -189,7 +189,7 @@ async def calculate_premium(
 
     ml_premium = _ml_predict_premium(tier, pincode, worker_history_factor, platform_activity_score, zone_risk)
     if ml_premium is not None:
-        adjusted = ml_premium
+        adjusted = round(ml_premium * zone_risk * season, 2)
     else:
         adjusted = base * zone_risk * season * worker_history_factor * platform_activity_score
         adjusted = round(adjusted, 2)

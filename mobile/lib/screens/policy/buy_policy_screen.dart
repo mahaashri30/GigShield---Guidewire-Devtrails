@@ -381,6 +381,11 @@ class _QuoteBreakdown extends StatelessWidget {
     final adjusted = (quote['adjusted_premium'] as num).toStringAsFixed(2);
     final zone = (quote['zone_risk_multiplier'] as num).toStringAsFixed(2);
     final season = (quote['season_factor'] as num).toStringAsFixed(2);
+    final totalDiscount = (quote['total_discount_pct'] as num? ?? 0).toDouble();
+    final afterFactors = ((quote['base_premium'] as num) *
+            (quote['zone_risk_multiplier'] as num) *
+            (quote['season_factor'] as num))
+        .toStringAsFixed(2);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -404,6 +409,10 @@ class _QuoteBreakdown extends StatelessWidget {
           _Row('Base premium', '₹$base'),
           _Row('Zone risk factor', '×$zone'),
           _Row('Season factor', '×$season'),
+          if (totalDiscount > 0)
+            _Row('Loyalty / no-claims discount',
+                '-${totalDiscount.toStringAsFixed(1)}%',
+                color: Colors.green),
           const Divider(),
           _Row('Your weekly premium', '₹$adjusted', bold: true),
         ],
@@ -411,7 +420,7 @@ class _QuoteBreakdown extends StatelessWidget {
     );
   }
 
-  Widget _Row(String label, String val, {bool bold = false}) {
+  Widget _Row(String label, String val, {bool bold = false, Color? color}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -425,7 +434,7 @@ class _QuoteBreakdown extends StatelessWidget {
               style: TextStyle(
                   fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
                   fontSize: 13,
-                  color: bold ? AppTheme.primary : AppTheme.textPrimary)),
+                  color: color ?? (bold ? AppTheme.primary : AppTheme.textPrimary))),
         ],
       ),
     );
