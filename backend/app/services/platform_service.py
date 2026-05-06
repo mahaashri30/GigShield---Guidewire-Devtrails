@@ -307,23 +307,22 @@ async def get_worker_baseline(
     Phase 2: Replace GPS proxy with actual platform session logs.
     """
     from datetime import datetime, timezone, timedelta
-    from sqlalchemy import select, func
+    from sqlalchemy import select, func, cast, Date
     from app.models.models import WorkerLocationPing
 
     now = datetime.now(timezone.utc)
     since = now - timedelta(days=days)
 
+    day_col = cast(WorkerLocationPing.recorded_at, Date)
     result = await db.execute(
         select(
-            func.date_trunc('day', WorkerLocationPing.recorded_at).label('day'),
+            day_col.label('day'),
             func.count(WorkerLocationPing.id).label('ping_count'),
         ).where(
             WorkerLocationPing.worker_id == worker_id,
             WorkerLocationPing.recorded_at >= since,
             WorkerLocationPing.is_suspicious == False,
-        ).group_by(
-            func.date_trunc('day', WorkerLocationPing.recorded_at)
-        )
+        ).group_by(day_col)
     )
     daily_pings = result.all()
     active_days = sum(1 for row in daily_pings if row.ping_count >= 3)
