@@ -14,8 +14,6 @@ from app.services.notification_service import notify_claim_approved, notify_clai
 
 router = APIRouter()
 
-# City pools — which disruption types are valid per city
-# Delhi/NCR: AQI + Heat pool | Mumbai/Bangalore: Rain pool | All: Civic + Traffic
 CITY_POOLS = {
     "Delhi":          [DisruptionType.AQI_SPIKE, DisruptionType.EXTREME_HEAT, DisruptionType.TRAFFIC_DISRUPTION, DisruptionType.CIVIC_EMERGENCY],
     "Mumbai":         [DisruptionType.HEAVY_RAIN, DisruptionType.TRAFFIC_DISRUPTION, DisruptionType.CIVIC_EMERGENCY],
@@ -33,8 +31,6 @@ CITY_POOLS = {
     "Patna":          [DisruptionType.HEAVY_RAIN, DisruptionType.EXTREME_HEAT, DisruptionType.CIVIC_EMERGENCY],
 }
 
-# Minimum disruption duration (hours) before a claim is valid per type
-# A 1-second rain event cannot block a worker — must persist for meaningful time
 MIN_DISRUPTION_HOURS = {
     "heavy_rain":         0.5,
     "extreme_heat":       2.0,
@@ -53,18 +49,11 @@ def is_within_active_hours(dt: datetime) -> bool:
 
 
 def active_hours_ratio(event: object) -> float:
-    """
-    Fraction of the 16-hour working day (6am-10pm IST) lost to this disruption.
-    Uses actual ended_at - started_at, clamped to the active window.
-    Only called by the 3am batch — by then ended_at is always set by the poller.
-    """
     started = event.started_at
     if started.tzinfo is None:
         started = started.replace(tzinfo=timezone.utc)
     ended = event.ended_at
     if ended is None:
-        # Poller hasn't closed it yet (e.g. overnight civic emergency still active at 3am)
-        # Use current batch time as the end — worker lost the whole remaining active window
         ended = datetime.now(timezone.utc)
     if ended.tzinfo is None:
         ended = ended.replace(tzinfo=timezone.utc)
@@ -80,7 +69,7 @@ def active_hours_ratio(event: object) -> float:
     effective_end   = min(end_ist,   day_end)
 
     if effective_start >= day_end:
-        return 0.0  # disruption entirely outside active hours
+        return 0.0
 
     actual_hours = max(0.0, (effective_end - effective_start).total_seconds() / 3600)
     return round(actual_hours / TOTAL_ACTIVE_HOURS, 3)
@@ -89,13 +78,12 @@ def active_hours_ratio(event: object) -> float:
 import math
 
 def haversine(lat1, lon1, lat2, lon2):
-    """Calculate distance in km between two points."""
-    R = 6371  # Earth radius in km
+    R = 6371
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
     a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return R * c
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
 
 @router.post("/trigger/{disruption_event_id}", response_model=ClaimResponse)
 async def trigger_claim(
@@ -106,35 +94,31 @@ async def trigger_claim(
     current_worker = auth.worker
     now = datetime.now(timezone.utc)
 
-    # Get active policy with row-level locking to prevent race conditions
+    # ── Active policy ─────────────────────────────────────────────────────────
     result = await db.execute(
         select(Policy).where(
             Policy.worker_id == current_worker.id,
             Policy.status == PolicyStatus.ACTIVE,
-        ).order_by(Policy.created_at.desc())
-        .with_for_update()
+        ).order_by(Policy.created_at.desc()).with_for_update()
     )
-    all_active = result.scalars().all()
     policy = None
-    for p in all_active:
+    for p in result.scalars().all():
         end = p.end_date.replace(tzinfo=timezone.utc) if p.end_date.tzinfo is None else p.end_date
         if end >= now:
             policy = p
             break
     if not policy:
         raise HTTPException(status_code=400, detail="No active policy found")
-    
-    # Ensure policy end_date is timezone-aware
+
     end_date = policy.end_date
     if end_date.tzinfo is None:
         end_date = end_date.replace(tzinfo=timezone.utc)
-        
     if end_date < now:
         policy.status = PolicyStatus.EXPIRED
         await db.commit()
         raise HTTPException(status_code=400, detail="Policy has expired")
 
-    # Get disruption event
+    # ── Disruption event ──────────────────────────────────────────────────────
     result = await db.execute(select(DisruptionEvent).where(DisruptionEvent.id == disruption_event_id))
     event = result.scalar_one_or_none()
     if not event:
@@ -143,20 +127,17 @@ async def trigger_claim(
     if event.city.lower() != current_worker.city.lower():
         raise HTTPException(status_code=400, detail="Disruption event is not in your city")
 
-    # City pool check
     allowed_types = CITY_POOLS.get(current_worker.city, list(DisruptionType))
     if event.disruption_type not in allowed_types:
         raise HTTPException(status_code=400, detail=f"{event.disruption_type} is not covered in {current_worker.city} pool")
 
-    # Active hours check
     event_started_at = event.started_at
     if event_started_at.tzinfo is None:
         event_started_at = event_started_at.replace(tzinfo=timezone.utc)
-    
+
+    # ── Hours ratio + minimum duration check ─────────────────────────────────
     hours_ratio = active_hours_ratio(event)
 
-    # Enforce minimum disruption duration — real mode only
-    # Dev mode skips this so simulate flow works instantly
     if not auth.is_dev_mode:
         min_hours = MIN_DISRUPTION_HOURS.get(event.disruption_type.value, 0.5)
         min_ratio = round(min_hours / TOTAL_ACTIVE_HOURS, 3)
@@ -168,30 +149,24 @@ async def trigger_claim(
                 detail=f"Disruption must persist for at least {required_minutes} min before claiming. "
                        f"Current duration: {elapsed_minutes} min."
             )
-    # Dev mode: use infra_hours_ratio as floor so payout is still realistic
     if auth.is_dev_mode and hours_ratio <= 0.0:
         hours_ratio = 0.1
+
+    # ── Proximity factor ──────────────────────────────────────────────────────
+    from app.models.models import WorkerLocationPing
     worker_prefix = current_worker.pincode[:3] if current_worker.pincode else ""
     event_prefix = (event.pincode or "")[:3]
-    
-    # Base proximity factor
     proximity_factor = 1.0
-    
-    # From app.models.models import WorkerLocationPing
-    from app.models.models import WorkerLocationPing
-    
-    # Use GPS coordinates if available for precise proximity
+
     last_ping_result = await db.execute(
         select(WorkerLocationPing).where(
             WorkerLocationPing.worker_id == current_worker.id,
         ).order_by(WorkerLocationPing.recorded_at.desc()).limit(1)
     )
     last_ping = last_ping_result.scalar_one_or_none()
-    
+
     if last_ping and event.lat and event.lng:
         distance = haversine(last_ping.lat, last_ping.lng, event.lat, event.lng)
-        # Radius check: if outside 10km, reduce payout significantly
-        # If within radius_km, full payout. If between radius and 2*radius, partial.
         radius = event.radius_km or 5.0
         if distance <= radius:
             proximity_factor = 1.0
@@ -200,12 +175,9 @@ async def trigger_claim(
         else:
             proximity_factor = 0.4
     elif event_prefix and worker_prefix and worker_prefix != event_prefix:
-        # Fallback to pincode ward check if GPS not available
         proximity_factor = 0.7
-    else:
-        proximity_factor = 1.0
 
-    # Duplicate claim check
+    # ── Duplicate claim check ─────────────────────────────────────────────────
     dup = await db.execute(
         select(Claim).where(
             Claim.worker_id == current_worker.id,
@@ -215,66 +187,50 @@ async def trigger_claim(
     if dup.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Already claimed this disruption event")
 
-    # Claims this week
+    # ── Claims history for fraud ──────────────────────────────────────────────
     week_ago = now - timedelta(days=7)
-    count_result = await db.execute(
+    claims_this_week = (await db.execute(
         select(func.count(Claim.id)).where(
             Claim.worker_id == current_worker.id,
             Claim.created_at >= week_ago,
         )
-    )
-    claims_this_week = count_result.scalar() or 0
+    )).scalar() or 0
 
-    # Worker's historical average claims per week (last 12 weeks)
     twelve_weeks_ago = now - timedelta(weeks=12)
-    hist_result = await db.execute(
+    hist_count = (await db.execute(
         select(func.count(Claim.id)).where(
             Claim.worker_id == current_worker.id,
             Claim.created_at >= twelve_weeks_ago,
         )
-    )
-    hist_count = hist_result.scalar() or 0
+    )).scalar() or 0
     worker_avg_claims_per_week = round(hist_count / 12.0, 2) if hist_count > 0 else 0.0
 
-    # Zone-level stats: how many workers in same pincode zone claimed this event
     zone_prefix = current_worker.pincode[:3] if current_worker.pincode else ""
-    zone_claims_result = await db.execute(
+    zone_claim_count = (await db.execute(
         select(func.count(Claim.id)).where(
             Claim.disruption_event_id == disruption_event_id,
         ).join(Worker).where(Worker.pincode.like(f"{zone_prefix}%"))
-    )
-    zone_claim_count = zone_claims_result.scalar() or 0
+    )).scalar() or 0
 
-    # Total active workers in zone
-    zone_workers_result = await db.execute(
+    zone_total_workers = (await db.execute(
         select(func.count(Worker.id)).where(
             Worker.pincode.like(f"{zone_prefix}%"),
             Worker.is_active == True,
         )
-    )
-    zone_total_workers = zone_workers_result.scalar() or 0
+    )).scalar() or 0
 
-    # Fraud detection (re-uses last_ping if fetched)
     ping_cutoff = now - timedelta(minutes=30)
-    suspicious_result = await db.execute(
+    had_suspicious_ping = (await db.execute(
         select(WorkerLocationPing).where(
             WorkerLocationPing.worker_id == current_worker.id,
             WorkerLocationPing.is_suspicious == True,
             WorkerLocationPing.recorded_at >= ping_cutoff,
         ).limit(1)
-    )
-    had_suspicious_ping = suspicious_result.scalar_one_or_none() is not None
+    )).scalar_one_or_none() is not None
+
     last_known_city = last_ping.city_detected if last_ping else ""
-
-    # Check if device was off during the disruption window (gap > 90 min)
-    had_device_off_gap = False
-    if last_ping and last_ping.gap_minutes and last_ping.gap_minutes > 90:
-        had_device_off_gap = True
-
-    # Check if SIM was changed
-    sim_changed = current_worker.sim_changed_at is not None and (
-        current_worker.sim_changed_at > event_started_at
-    )
+    had_device_off_gap = bool(last_ping and last_ping.gap_minutes and last_ping.gap_minutes > 90)
+    sim_changed = current_worker.sim_changed_at is not None and current_worker.sim_changed_at > event_started_at
 
     fraud_result = calculate_fraud_score(
         worker_city=current_worker.city,
@@ -299,38 +255,8 @@ async def trigger_claim(
         had_device_off_gap=had_device_off_gap,
     )
 
-    # ── Platform activity during disruption window ──────────────────────────
-    # Phase 1: Use 15-day GPS baseline + DSS-based order drop model
-    # Phase 2: Replace with actual Blinkit/Zepto/Swiggy partner API
-    from app.services.platform_service import get_worker_baseline, compute_income_loss, DEFAULT_ONLINE_HOURS_PER_DAY, DEFAULT_ORDERS_PER_DAY
-
-    baseline = await get_worker_baseline(
-        worker_id=current_worker.id,
-        db=db,
-        avg_daily_earnings=current_worker.avg_daily_earnings,
-        avg_online_hours=current_worker.avg_online_hours_per_day or DEFAULT_ONLINE_HOURS_PER_DAY,
-        avg_orders_per_day=current_worker.avg_orders_per_day or DEFAULT_ORDERS_PER_DAY,
-    )
-
-    disruption_hours = max(0.1, (now - event_started_at).total_seconds() / 3600)
-    if auth.is_dev_mode:
-        # Dev mode: use infra_hours_ratio as realistic disruption duration
-        disruption_hours = infra_hours_ratio * TOTAL_ACTIVE_HOURS
-
-    income_loss_data = compute_income_loss(
-        baseline=baseline,
-        disruption_type=event.disruption_type.value,
-        severity=event.severity.value,
-        disruption_hours=disruption_hours,
-    )
-    income_loss_ratio = income_loss_data["income_loss_ratio"]
-
-    print(f"[Claims] baseline={baseline['avg_hourly_earnings']}/hr "
-          f"drop={income_loss_ratio} "
-          f"loss=Rs.{income_loss_data['income_loss']} "
-          f"baseline_days={baseline['active_days_in_window']}")
-
-
+    # ── Caps ──────────────────────────────────────────────────────────────────
+    daily_cap, weekly_cap_dynamic = get_dynamic_caps(policy.tier, current_worker.city)
     weekly_cap = weekly_cap_dynamic
     weekly_claimed = float(policy.total_claimed or 0)
     weekly_remaining = max(0.0, weekly_cap - weekly_claimed)
@@ -339,24 +265,18 @@ async def trigger_claim(
         raise HTTPException(status_code=400, detail="Weekly payout cap reached for this policy")
 
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_result = await db.execute(
+    claimed_today = float((await db.execute(
         select(func.coalesce(func.sum(Claim.approved_amount), 0.0)).where(
             Claim.worker_id == current_worker.id,
             Claim.status.in_([ClaimStatus.APPROVED, ClaimStatus.PAID]),
             Claim.created_at >= today_start,
         )
-    )
-    claimed_today = float(today_result.scalar() or 0)
+    )).scalar() or 0)
 
     daily_remaining = max(0.0, daily_cap - claimed_today)
     effective_cap = min(daily_remaining, weekly_remaining)
 
-    effective_hours_ratio = hours_ratio * proximity_factor
-
-    # ── Ward-level infra-adjusted DSS ────────────────────────────────────────
-    # Use worker's activity zone (last 30 days of GPS pings) — weighted
-    # average of all wards they regularly work in. More accurate and
-    # fraud-resistant than a single real-time ping.
+    # ── Infra-adjusted DSS + hours ratio ─────────────────────────────────────
     from app.services.infra_service import get_activity_zone_infra_score
     activity_infra = await get_activity_zone_infra_score(
         worker_id=current_worker.id,
@@ -375,9 +295,8 @@ async def trigger_claim(
         activity_zone_infra=activity_infra,
     )
 
-    # Final effective hours ratio:
-    # Real mode: min of actual elapsed time vs infra-based duration
-    # Dev mode: use infra_hours_ratio directly (realistic for demo, not seconds-old event)
+    # Dev mode: use infra_hours_ratio directly (realistic demo payout)
+    # Real mode: min of actual elapsed vs infra-based duration (conservative)
     if auth.is_dev_mode:
         effective_hours_ratio = round(infra_hours_ratio * proximity_factor, 3)
     else:
@@ -385,6 +304,44 @@ async def trigger_claim(
             min(hours_ratio, infra_hours_ratio) * proximity_factor, 3
         )
 
+    # ── Platform baseline + income loss (Phase 1: GPS proxy + order drop model)
+    # Phase 2: replace with Blinkit/Zepto/Swiggy partner API
+    from app.services.platform_service import get_worker_baseline, compute_income_loss, DEFAULT_ONLINE_HOURS_PER_DAY, DEFAULT_ORDERS_PER_DAY
+
+    baseline = await get_worker_baseline(
+        worker_id=current_worker.id,
+        db=db,
+        avg_daily_earnings=current_worker.avg_daily_earnings,
+        avg_online_hours=current_worker.avg_online_hours_per_day or DEFAULT_ONLINE_HOURS_PER_DAY,
+        avg_orders_per_day=current_worker.avg_orders_per_day or DEFAULT_ORDERS_PER_DAY,
+    )
+
+    # disruption_hours: how long the disruption actually ran
+    # Dev mode: use infra_hours_ratio * 16h (realistic for demo)
+    # Real mode: actual elapsed time since event started
+    if auth.is_dev_mode:
+        disruption_hours = infra_hours_ratio * TOTAL_ACTIVE_HOURS
+    else:
+        disruption_hours = max(0.1, (now - event_started_at).total_seconds() / 3600)
+
+    income_loss_data = compute_income_loss(
+        baseline=baseline,
+        disruption_type=event.disruption_type.value,
+        severity=event.severity.value,
+        disruption_hours=disruption_hours,
+    )
+    income_loss_ratio = income_loss_data["income_loss_ratio"]
+
+    print(f"[Claims] platform={current_worker.platform} "
+          f"online={baseline['avg_online_hours_per_day']}h/day "
+          f"orders={baseline['avg_orders_per_day']}/day "
+          f"hourly=Rs.{baseline['avg_hourly_earnings']} "
+          f"drop={income_loss_ratio*100:.0f}% "
+          f"loss=Rs.{income_loss_data['income_loss']} "
+          f"source={baseline['data_source']}")
+
+    # ── Final payout calculation ──────────────────────────────────────────────
+    # payout = daily_avg x dss x effective_hours x income_loss_ratio
     payout_data = calculate_payout(
         worker_daily_avg=current_worker.avg_daily_earnings,
         dss_multiplier=adjusted_dss,
@@ -414,23 +371,19 @@ async def trigger_claim(
         claim.processed_at = now
         policy.total_claimed = round(weekly_claimed + approved, 2)
         policy.claims_count = (policy.claims_count or 0) + 1
-
     elif fraud_result["auto_reject"]:
         claim.status = ClaimStatus.REJECTED
         claim.rejection_reason = "; ".join(fraud_result["flags"])
         claim.processed_at = now
 
     db.add(claim)
-    # Commit here to release the lock on the policy row
     await db.commit()
     await db.refresh(claim)
 
-    # Notify on rejection
     if claim.status == ClaimStatus.REJECTED:
         await notify_claim_rejected(db, current_worker, claim)
         await db.commit()
 
-    # Auto-payout if approved and amount > 0
     if claim.status == ClaimStatus.APPROVED and (claim.approved_amount or 0) > 0:
         await notify_claim_approved(db, current_worker, claim, event.disruption_type.value)
         upi_id = current_worker.upi_id or "worker_" + current_worker.id[:8] + "@upi"
@@ -466,7 +419,6 @@ async def trigger_claim(
             claim.status = ClaimStatus.PAID
             await notify_claim_paid(db, current_worker, claim, upi_id, payout_result.get("transaction_ref", ""))
         elif payout_result.get("rollback"):
-            # Rollback: revert policy total_claimed so worker can retry
             policy.total_claimed = round(max(0.0, float(policy.total_claimed or 0) - (claim.approved_amount or 0)), 2)
             policy.claims_count = max(0, (policy.claims_count or 1) - 1)
         db.add(payout)
