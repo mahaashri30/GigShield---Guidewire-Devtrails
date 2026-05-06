@@ -36,12 +36,13 @@ CITY_POOLS = {
 # Minimum disruption duration (hours) before a claim is valid per type
 # A 1-second rain event cannot block a worker — must persist for meaningful time
 MIN_DISRUPTION_HOURS = {
-    "heavy_rain":         0.5,   # 30 min — roads flood after sustained rain
-    "extreme_heat":       2.0,   # 2 hrs  — heat builds up over time
-    "aqi_spike":          1.0,   # 1 hr   — AQI needs sustained exposure
-    "traffic_disruption": 0.5,   # 30 min — gridlock takes time to form
-    "civic_emergency":    1.0,   # 1 hr   — bandh/curfew has minimum duration
+    "heavy_rain":         0.5,
+    "extreme_heat":       2.0,
+    "aqi_spike":          1.0,
+    "traffic_disruption": 0.5,
+    "civic_emergency":    1.0,
 }
+ACTIVE_HOUR_START = 6
 ACTIVE_HOUR_END = 22
 TOTAL_ACTIVE_HOURS = 16.0
 
