@@ -176,6 +176,12 @@ class _BuyPolicyScreenState extends ConsumerState<BuyPolicyScreen> {
                   ..._tiers.map((t) => _TierCard(
                         tier: t,
                         selected: selectedTier == t['value'],
+                        // Show adjusted price on selected tier, base price on others
+                        adjustedPrice: selectedTier == t['value']
+                            ? quoteAsync.whenOrNull(
+                                data: (q) => (q['adjusted_premium'] as num?)?.toStringAsFixed(0),
+                              )
+                            : null,
                         onSelect: () => ref
                             .read(selectedTierProvider.notifier)
                             .state = t['value']!,
@@ -278,13 +284,19 @@ class _BuyPolicyScreenState extends ConsumerState<BuyPolicyScreen> {
 class _TierCard extends StatelessWidget {
   final Map<String, String> tier;
   final bool selected;
+  final String? adjustedPrice;  // AI-calculated price, null for unselected tiers
   final VoidCallback onSelect;
   const _TierCard(
-      {required this.tier, required this.selected, required this.onSelect});
+      {required this.tier,
+      required this.selected,
+      required this.onSelect,
+      this.adjustedPrice});
 
   @override
   Widget build(BuildContext context) {
     final isPopular = tier['popular'] == 'true';
+    final displayPrice = adjustedPrice ?? tier['price']!.replaceAll('₹', '');
+    final isAdjusted = adjustedPrice != null && adjustedPrice != tier['price']!.replaceAll('₹', '');
     return GestureDetector(
       onTap: onSelect,
       child: AnimatedContainer(
@@ -322,14 +334,32 @@ class _TierCard extends StatelessWidget {
                             fontWeight: FontWeight.w700)),
                   ),
                 const SizedBox(width: 8),
-                Text(tier['price']!,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 20,
-                        color: AppTheme.primary)),
-                const Text('/wk',
-                    style:
-                        TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    // Show strikethrough base price if adjusted is different
+                    if (isAdjusted)
+                      Text(
+                        tier['price']!,
+                        style: const TextStyle(
+                            fontSize: 13,
+                            color: AppTheme.textSecondary,
+                            decoration: TextDecoration.lineThrough),
+                      ),
+                    Row(
+                      children: [
+                        Text('₹$displayPrice',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 20,
+                                color: AppTheme.primary)),
+                        const Text('/wk',
+                            style: TextStyle(
+                                color: AppTheme.textSecondary, fontSize: 12)),
+                      ],
+                    ),
+                  ],
+                ),
               ],
             ),
             const SizedBox(height: 6),
