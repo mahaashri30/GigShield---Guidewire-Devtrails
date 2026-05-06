@@ -171,8 +171,6 @@ async def trigger_claim(
     # Dev mode: use infra_hours_ratio as floor so payout is still realistic
     if auth.is_dev_mode and hours_ratio <= 0.0:
         hours_ratio = 0.1
-
-    # ── Dark Store Proximity / Ward-level check ─────────────────────────────
     worker_prefix = current_worker.pincode[:3] if current_worker.pincode else ""
     event_prefix = (event.pincode or "")[:3]
     
@@ -348,12 +346,14 @@ async def trigger_claim(
     )
 
     # Final effective hours ratio:
-    # infra_hours_ratio = how long disruption actually blocks worker in this ward
-    # proximity_factor = how close worker is to epicenter
-    # We take the more conservative (lower) of infra-based and time-of-day based
-    effective_hours_ratio = round(
-        min(hours_ratio, infra_hours_ratio) * proximity_factor, 3
-    )
+    # Real mode: min of actual elapsed time vs infra-based duration
+    # Dev mode: use infra_hours_ratio directly (realistic for demo, not seconds-old event)
+    if auth.is_dev_mode:
+        effective_hours_ratio = round(infra_hours_ratio * proximity_factor, 3)
+    else:
+        effective_hours_ratio = round(
+            min(hours_ratio, infra_hours_ratio) * proximity_factor, 3
+        )
 
     payout_data = calculate_payout(
         worker_daily_avg=current_worker.avg_daily_earnings,
