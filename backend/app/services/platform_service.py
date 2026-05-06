@@ -33,6 +33,7 @@ from app.config import settings
 #   Higher ratio = more of income goes to survival = disruption hurts more relatively
 CITY_ECONOMICS = {
     # city: (col_index, subsistence_ratio)
+    # Metros
     "Mumbai":          (1.45, 0.58),
     "Delhi":           (1.35, 0.52),
     "Bangalore":       (1.30, 0.53),
@@ -42,6 +43,9 @@ CITY_ECONOMICS = {
     "Kolkata":         (1.10, 0.50),
     "Noida":           (1.25, 0.51),
     "Gurgaon":         (1.30, 0.52),
+    "Faridabad":       (1.10, 0.46),
+    "Kanpur":          (0.88, 0.40),
+    # Large cities
     "Ahmedabad":       (1.05, 0.44),
     "Surat":           (1.05, 0.43),
     "Jaipur":          (1.00, 0.42),
@@ -49,15 +53,34 @@ CITY_ECONOMICS = {
     "Indore":          (0.95, 0.41),
     "Bhopal":          (0.90, 0.40),
     "Nagpur":          (0.95, 0.41),
-    "Coimbatore":      (1.00, 0.40),
-    "Madurai":         (0.90, 0.38),
-    "Tiruchirappalli": (0.88, 0.38),
-    "Kochi":           (1.05, 0.45),
     "Chandigarh":      (1.10, 0.46),
     "Visakhapatnam":   (0.95, 0.41),
     "Vadodara":        (0.95, 0.41),
+    "Kochi":           (1.05, 0.45),
+    "Dehradun":        (0.95, 0.41),
+    # Mid-size cities
+    "Coimbatore":      (1.00, 0.40),
+    "Madurai":         (0.90, 0.38),
+    "Tiruchirappalli": (0.88, 0.38),
+    "Salem":           (0.85, 0.38),
+    "Erode":           (0.83, 0.37),
     "Amritsar":        (0.90, 0.40),
     "Ludhiana":        (0.92, 0.40),
+    "Mysore":          (1.00, 0.41),
+    "Hubli":           (0.88, 0.39),
+    "Mangalore":       (0.95, 0.41),
+    "Nashik":          (0.95, 0.41),
+    "Aurangabad":      (0.90, 0.40),
+    "Jodhpur":         (0.88, 0.39),
+    "Raipur":          (0.85, 0.38),
+    "Bhubaneswar":     (0.88, 0.39),
+    "Vijayawada":      (0.90, 0.40),
+    "Warangal":        (0.85, 0.38),
+    "Guntur":          (0.85, 0.38),
+    "Rajkot":          (0.92, 0.40),
+    "Jabalpur":        (0.85, 0.38),
+    "Gwalior":         (0.85, 0.38),
+    # Smaller cities
     "Patna":           (0.75, 0.36),
     "Guwahati":        (0.80, 0.37),
     "Ranchi":          (0.78, 0.36),
@@ -66,6 +89,11 @@ CITY_ECONOMICS = {
     "Meerut":          (0.85, 0.38),
     "Gorakhpur":       (0.75, 0.35),
     "Siliguri":        (0.80, 0.37),
+    "Imphal":          (0.72, 0.34),
+    "Shillong":        (0.75, 0.35),
+    "Gaya":            (0.72, 0.34),
+    "Dhanbad":         (0.75, 0.35),
+    "Rourkela":        (0.78, 0.36),
 }
 
 DEFAULT_COL = 1.0
