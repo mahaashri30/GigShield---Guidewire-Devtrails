@@ -113,7 +113,11 @@ subsistence_ratio: fraction of daily earnings spent on survival needs (0.35-0.60
                 continue
             content = data["candidates"][0]["content"]["parts"][0]["text"].strip()
             content = content.replace("```json", "").replace("```", "").strip()
-            parsed = json.loads(content)
+            # Extract JSON object robustly
+            start, end = content.find("{"), content.rfind("}")
+            if start == -1 or end == -1:
+                continue
+            parsed = json.loads(content[start:end + 1])
             col = float(parsed["col_index"])
             sub = float(parsed["subsistence_ratio"])
             return round(max(0.70, min(1.50, col)), 2), round(max(0.35, min(0.60, sub)), 2)
