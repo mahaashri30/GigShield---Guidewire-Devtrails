@@ -1,0 +1,63 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:        # manual trigger — you click "Run workflow" on GitHub
+  push:
+    branches: [ main ]
+    paths:
+      - 'mobile/**'         # only runs when mobile code changes
+
+jobs:
+  build-ios:
+    runs-on: macos-latest   # GitHub provides a free Mac server
+
+    steps:
+      # 1. Checkout your code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Install Flutter
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.4'
+          channel: 'stable'
+          cache: true
+
+      # 3. Generate iOS folder (since you don't have one yet)
+      - name: Create iOS platform
+        working-directory: mobile
+        run: |
+          flutter create --platforms=ios .
+
+      # 4. Get dependencies
+      - name: Flutter pub get
+        working-directory: mobile
+        run: flutter pub get
+
+      # 5. Build iOS (no-codesign = no Apple Developer account needed)
+      #    This creates a .app bundle that can be used with simulators
+      #    For real device install, you need codesigning (Step 6 below)
+      - name: Build iOS (no codesign)
+        working-directory: mobile
+        run: |
+          flutter build ios --release --no-codesign \
+            --dart-define=BASE_URL=http://16.112.121.102:8000/api/v1 \
+            --dart-define=ALLOW_INSECURE_HTTP=true
+
+      # 6. Package into IPA manually (works without paid Apple account)
+      - name: Package IPA
+        working-directory: mobile
+        run: |
+          mkdir -p build/ios/iphoneos/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/
+          cd build/ios/iphoneos
+          zip -r ../../../GigShield.ipa Payload/
+
+      # 7. Upload IPA as downloadable artifact
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GigShield-iOS
+          path: mobile/GigShield.ipa
+          retention-days: 7    # available for 7 days to download
