@@ -54,17 +54,34 @@ class _BuyPolicyScreenState extends ConsumerState<BuyPolicyScreen> {
       final order = await ref.read(apiServiceProvider).createPolicyOrder(tier);
       _pendingOrder = {'order': order, 'tier': tier};
 
+      // Prefetch worker phone for GPay auto-select
+      final workerData = await ref.read(apiServiceProvider).getMe();
+      final phone = (workerData['phone'] as String? ?? '').replaceAll('+91', '');
+      final isLive = (order['key_id'] as String? ?? '').startsWith('rzp_live_');
+
       _razorpay.open({
         'key': order['key_id'],
         'order_id': order['order_id'],
         'amount': order['amount'],
         'currency': 'INR',
         'name': 'Susanoo',
-        'description':
-            '${AppConstants.tierLabels[tier] ?? tier} — Weekly Policy',
-        'prefill': {'contact': '', 'email': 'worker@susanoo.in'},
+        'description': '${AppConstants.tierLabels[tier] ?? tier} — Weekly Policy',
+        'prefill': {
+          'contact': phone,
+          'email': 'worker@susanoo.in',
+          'method': 'upi',   // opens UPI tab by default — shows GPay, PhonePe etc.
+        },
         'theme': {'color': '#1A56DB'},
         'modal': {'confirm_close': true},
+        if (isLive) 'config': {
+          'display': {
+            'blocks': {
+              'utib': {'name': 'Pay via UPI', 'instruments': [{'method': 'upi'}]}
+            },
+            'sequence': ['block.utib'],
+            'preferences': {'show_default_blocks': true},
+          }
+        },
       });
     } catch (e) {
       if (mounted) {
@@ -159,6 +176,12 @@ class _BuyPolicyScreenState extends ConsumerState<BuyPolicyScreen> {
                   ..._tiers.map((t) => _TierCard(
                         tier: t,
                         selected: selectedTier == t['value'],
+                        // Show adjusted price on selected tier, base price on others
+                        adjustedPrice: selectedTier == t['value']
+                            ? quoteAsync.whenOrNull(
+                                data: (q) => (q['adjusted_premium'] as num?)?.toStringAsFixed(0),
+                              )
+                            : null,
                         onSelect: () => ref
                             .read(selectedTierProvider.notifier)
                             .state = t['value']!,
@@ -184,9 +207,15 @@ class _BuyPolicyScreenState extends ConsumerState<BuyPolicyScreen> {
                   Border(top: BorderSide(color: AppTheme.divider, width: 0.5)),
             ),
             child: quoteAsync.when(
-              loading: () => const SizedBox(height: 56),
-              error: (_, __) => const SizedBox.shrink(),
-              data: (quote) => ElevatedButton(
+              loading: () => ElevatedButton(
+                onPressed: null,
+                child: const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(
+                      color: Colors.white, strokeWidth: 2)),
+              ),
+              error: (_, __) => ElevatedButton(
                 onPressed: _purchasing ? null : () => _buy(selectedTier),
                 child: _purchasing
                     ? const SizedBox(
@@ -195,7 +224,26 @@ class _BuyPolicyScreenState extends ConsumerState<BuyPolicyScreen> {
                         child: CircularProgressIndicator(
                             color: Colors.white, strokeWidth: 2))
                     : Text(
-                        'Pay ₹${(quote['adjusted_premium'] as num).toStringAsFixed(0)} via Razorpay'),
+                        'Pay ₹${AppConstants.tierBasePrices[selectedTier]?.toStringAsFixed(0) ?? "--"} via Razorpay'),
+              ),
+              data: (quote) => ElevatedButton(
+                onPressed: _purchasing ? null : () => _buy(selectedTier),
+                child: _purchasing
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2))
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.payment_rounded, size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Pay ₹${(quote['adjusted_premium'] as num).toStringAsFixed(0)} · UPI / GPay / Card',
+                          ),
+                        ],
+                      ),
               ),
             ),
           ),
@@ -236,13 +284,19 @@ class _BuyPolicyScreenState extends ConsumerState<BuyPolicyScreen> {
 class _TierCard extends StatelessWidget {
   final Map<String, String> tier;
   final bool selected;
+  final String? adjustedPrice;  // AI-calculated price, null for unselected tiers
   final VoidCallback onSelect;
   const _TierCard(
-      {required this.tier, required this.selected, required this.onSelect});
+      {required this.tier,
+      required this.selected,
+      required this.onSelect,
+      this.adjustedPrice});
 
   @override
   Widget build(BuildContext context) {
     final isPopular = tier['popular'] == 'true';
+    final displayPrice = adjustedPrice ?? tier['price']!.replaceAll('₹', '');
+    final isAdjusted = adjustedPrice != null && adjustedPrice != tier['price']!.replaceAll('₹', '');
     return GestureDetector(
       onTap: onSelect,
       child: AnimatedContainer(
@@ -280,14 +334,32 @@ class _TierCard extends StatelessWidget {
                             fontWeight: FontWeight.w700)),
                   ),
                 const SizedBox(width: 8),
-                Text(tier['price']!,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 20,
-                        color: AppTheme.primary)),
-                const Text('/wk',
-                    style:
-                        TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    // Show strikethrough base price if adjusted is different
+                    if (isAdjusted)
+                      Text(
+                        tier['price']!,
+                        style: const TextStyle(
+                            fontSize: 13,
+                            color: AppTheme.textSecondary,
+                            decoration: TextDecoration.lineThrough),
+                      ),
+                    Row(
+                      children: [
+                        Text('₹$displayPrice',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 20,
+                                color: AppTheme.primary)),
+                        const Text('/wk',
+                            style: TextStyle(
+                                color: AppTheme.textSecondary, fontSize: 12)),
+                      ],
+                    ),
+                  ],
+                ),
               ],
             ),
             const SizedBox(height: 6),
@@ -339,6 +411,11 @@ class _QuoteBreakdown extends StatelessWidget {
     final adjusted = (quote['adjusted_premium'] as num).toStringAsFixed(2);
     final zone = (quote['zone_risk_multiplier'] as num).toStringAsFixed(2);
     final season = (quote['season_factor'] as num).toStringAsFixed(2);
+    final totalDiscount = (quote['total_discount_pct'] as num? ?? 0).toDouble();
+    final afterFactors = ((quote['base_premium'] as num) *
+            (quote['zone_risk_multiplier'] as num) *
+            (quote['season_factor'] as num))
+        .toStringAsFixed(2);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -362,6 +439,10 @@ class _QuoteBreakdown extends StatelessWidget {
           _Row('Base premium', '₹$base'),
           _Row('Zone risk factor', '×$zone'),
           _Row('Season factor', '×$season'),
+          if (totalDiscount > 0)
+            _Row('Loyalty / no-claims discount',
+                '-${totalDiscount.toStringAsFixed(1)}%',
+                color: Colors.green),
           const Divider(),
           _Row('Your weekly premium', '₹$adjusted', bold: true),
         ],
@@ -369,7 +450,7 @@ class _QuoteBreakdown extends StatelessWidget {
     );
   }
 
-  Widget _Row(String label, String val, {bool bold = false}) {
+  Widget _Row(String label, String val, {bool bold = false, Color? color}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -383,7 +464,7 @@ class _QuoteBreakdown extends StatelessWidget {
               style: TextStyle(
                   fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
                   fontSize: 13,
-                  color: bold ? AppTheme.primary : AppTheme.textPrimary)),
+                  color: color ?? (bold ? AppTheme.primary : AppTheme.textPrimary))),
         ],
       ),
     );

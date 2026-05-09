@@ -13,6 +13,10 @@ class OTPVerify(BaseModel):
     phone: str = Field(..., pattern=r"^\+?[0-9]{10,15}$")
     otp: str = Field(..., pattern=r"^[0-9]{6}$")
 
+class AdminLogin(BaseModel):
+    email: str
+    password: str
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
@@ -25,7 +29,7 @@ class TokenResponse(BaseModel):
 # ── Worker ────────────────────────────────────────────────────────────────────
 
 class WorkerCreate(BaseModel):
-    phone: str
+    phone: Optional[str] = None
     name: str
     platform: Platform
     city: str
@@ -33,6 +37,8 @@ class WorkerCreate(BaseModel):
     upi_id: Optional[str] = None
     platform_worker_id: Optional[str] = None
     avg_daily_earnings: Optional[float] = None
+    avg_online_hours_per_day: Optional[float] = None
+    avg_orders_per_day: Optional[float] = None
 
 class WorkerUpdate(BaseModel):
     name: Optional[str] = None
@@ -50,6 +56,8 @@ class WorkerResponse(BaseModel):
     upi_id: Optional[str]
     is_verified: bool
     avg_daily_earnings: float
+    avg_online_hours_per_day: float
+    avg_orders_per_day: float
     risk_score: float
     created_at: datetime
 

@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:susanoo/l10n/app_strings.dart';
 import 'package:susanoo/providers/app_providers.dart';
 import 'package:susanoo/providers/locale_provider.dart';
 import 'package:susanoo/theme/app_theme.dart';
@@ -101,7 +102,8 @@ class _RiskBody extends ConsumerWidget {
             _RiskGauge(
                 probability: overallProbability,
                 city: city,
-                platform: platform),
+                platform: platform,
+                s: s),
             const SizedBox(height: 20),
 
             _RiskFactorCard(
@@ -359,8 +361,12 @@ class _RiskGauge extends StatefulWidget {
   final double probability;
   final String city;
   final String platform;
+  final AppStrings s;
   const _RiskGauge(
-      {required this.probability, required this.city, required this.platform});
+      {required this.probability,
+      required this.city,
+      required this.platform,
+      required this.s});
 
   @override
   State<_RiskGauge> createState() => _RiskGaugeState();
@@ -393,7 +399,7 @@ class _RiskGaugeState extends State<_RiskGauge>
     return AppTheme.danger;
   }
 
-  String _labelFor(double v, dynamic s) {
+  String _labelFor(double v, AppStrings s) {
     if (v < 0.35) return s.lowRisk;
     if (v < 0.65) return s.moderateRisk;
     return s.highRisk;
@@ -404,7 +410,6 @@ class _RiskGaugeState extends State<_RiskGauge>
     return AnimatedBuilder(
       animation: _anim,
       builder: (context, __) {
-        final s = ProviderScope.containerOf(context).read(stringsProvider);
         final v = _anim.value;
         final color = _colorFor(v);
         return Container(
@@ -423,7 +428,7 @@ class _RiskGaugeState extends State<_RiskGauge>
           ),
           child: Column(
             children: [
-              Text(s.riskProbability,
+              Text(widget.s.riskProbability,
                   style: const TextStyle(
                       fontSize: 13,
                       color: AppTheme.textSecondary,
@@ -450,7 +455,7 @@ class _RiskGaugeState extends State<_RiskGauge>
                             color: color.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: Text(_labelFor(v, s),
+                          child: Text(_labelFor(v, widget.s),
                               style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w800,

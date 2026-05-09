@@ -94,6 +94,19 @@ class ProfileScreen extends ConsumerWidget {
                   style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: AppTheme.danger)),
                 ),
+                const SizedBox(height: 12),
+                // Delete account button
+                TextButton.icon(
+                  onPressed: () => _confirmDeleteAccount(context, ref),
+                  icon: const Icon(Icons.delete_forever_rounded,
+                      color: Colors.red, size: 18),
+                  label: const Text('Delete Account',
+                      style: TextStyle(
+                          color: Colors.red,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600)),
+                ),
+                const SizedBox(height: 32),
               ],
             ),
           );
@@ -101,6 +114,65 @@ class ProfileScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+void _confirmDeleteAccount(BuildContext context, WidgetRef ref) {
+  showDialog(
+    context: context,
+    barrierDismissible: true,
+    builder: (dialogCtx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Row(
+        children: [
+          Icon(Icons.warning_amber_rounded, color: Colors.red, size: 24),
+          SizedBox(width: 10),
+          Text('Delete Account',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+        ],
+      ),
+      content: const Text(
+        'Your account will be scheduled for deletion.\n\nPolicies will be cancelled. Financial records are retained for 30 days as required by regulations.',
+        style: TextStyle(fontSize: 14, height: 1.5),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogCtx), // use dialogCtx not context
+          child: const Text('Cancel',
+              style: TextStyle(color: AppTheme.textSecondary)),
+        ),
+        ElevatedButton(
+          onPressed: () async {
+            Navigator.pop(dialogCtx); // close dialog first using dialogCtx
+            try {
+              await ref.read(apiServiceProvider).deleteAccount();
+              await ref.read(authProvider.notifier).logout();
+              // Use context only after dialog is fully closed
+              if (context.mounted) context.go('/auth/phone');
+            } catch (e) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Failed to delete account: $e'),
+                    backgroundColor: AppTheme.danger,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            }
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red,
+            minimumSize: const Size(0, 44),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
+          ),
+          child: const Text('Yes, Delete',
+              style: TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.w700)),
+        ),
+      ],
+    ),
+  );
 }
 
 class _LanguageSwitcher extends ConsumerWidget {

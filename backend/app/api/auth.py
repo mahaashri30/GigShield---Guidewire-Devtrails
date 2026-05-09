@@ -5,7 +5,7 @@ from jose import JWTError, jwt
 from pydantic import BaseModel
 from app.database import get_db
 from app.models.models import Worker
-from app.schemas.schemas import OTPRequest, OTPVerify, TokenResponse
+from app.schemas.schemas import OTPRequest, OTPVerify, TokenResponse, AdminLogin
 from app.services.auth_service import generate_otp, send_otp_sms, verify_otp, create_access_token, create_refresh_token
 from app.config import settings
 
@@ -39,7 +39,7 @@ async def verify_otp_endpoint(payload: OTPVerify, db: AsyncSession = Depends(get
         and settings.ENVIRONMENT != "production"
         and payload.otp == "123456"
     )
-    if not verify_otp(payload.phone, payload.otp):
+    if not is_dev_mode and not verify_otp(payload.phone, payload.otp):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired OTP",
@@ -50,7 +50,7 @@ async def verify_otp_endpoint(payload: OTPVerify, db: AsyncSession = Depends(get
     is_new = worker is None
 
     if is_new:
-        worker = Worker(phone=payload.phone, name="", platform="zomato", city="", pincode="")
+        worker = Worker(phone=payload.phone, name="", platform="zomato", city="Unknown", pincode="000000")
         db.add(worker)
         await db.commit()
         await db.refresh(worker)
@@ -64,6 +64,32 @@ async def verify_otp_endpoint(payload: OTPVerify, db: AsyncSession = Depends(get
         worker_id=worker.id,
         is_new_user=is_new,
         is_dev_mode=is_dev_mode,
+    )
+
+
+@router.post("/admin-login", response_model=TokenResponse)
+async def admin_login(payload: AdminLogin, db: AsyncSession = Depends(get_db)):
+    from app.models.models import Admin
+    from app.services.auth_service import pwd_context
+    
+    result = await db.execute(select(Admin).where(Admin.email == payload.email))
+    admin = result.scalar_one_or_none()
+    
+    if not admin or not pwd_context.verify(payload.password, admin.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+    
+    access_token = create_access_token({"sub": str(admin.id), "email": admin.email, "is_admin": True})
+    refresh_token = create_refresh_token({"sub": str(admin.id), "is_admin": True})
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        worker_id=admin.id,
+        is_new_user=False,
+        is_dev_mode=True,
     )
 
 

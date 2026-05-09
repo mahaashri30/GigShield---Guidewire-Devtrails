@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:susanoo/utils/constants.dart';
@@ -13,8 +16,8 @@ class ApiService {
   ApiService() {
     _dio = Dio(BaseOptions(
       baseUrl: AppConstants.baseUrl,
-      connectTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 60),
+      connectTimeout: AppConstants.connectTimeout,
+      receiveTimeout: AppConstants.receiveTimeout,
       headers: {'Content-Type': 'application/json'},
     ));
 
@@ -27,11 +30,19 @@ class ApiService {
         return handler.next(options);
       },
       onError: (DioException e, handler) async {
+        // Surface a readable message for connection failures
+        if (e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.receiveTimeout ||
+            e.type == DioExceptionType.connectionError) {
+          return handler.next(DioException(
+            requestOptions: e.requestOptions,
+            type: e.type,
+            error: 'Cannot reach server. Check your internet connection.',
+          ));
+        }
         if (e.response?.statusCode == 401) {
-          // Attempt silent token refresh before giving up
           final refreshed = await _tryRefresh();
           if (refreshed) {
-            // Retry the original request with the new token
             final token = await _storage.read(key: AppConstants.accessTokenKey);
             final opts = e.requestOptions;
             opts.headers['Authorization'] = 'Bearer $token';
@@ -40,7 +51,6 @@ class ApiService {
               return handler.resolve(response);
             } catch (_) {}
           }
-          // Refresh failed — clear storage so app redirects to login
           await _storage.deleteAll();
           return handler.next(DioException(
             requestOptions: e.requestOptions,
@@ -92,6 +102,14 @@ class ApiService {
     return res.data;
   }
 
+  Future<Map<String, dynamic>> adminLogin(String email, String password) async {
+    final res = await _dio.post('/auth/admin-login', data: {
+      'email': email,
+      'password': password,
+    });
+    return res.data;
+  }
+
   Future<void> saveTokens(String access, String refresh, String workerId,
       {bool isDevMode = false}) async {
     await _storage.write(key: AppConstants.accessTokenKey, value: access);
@@ -105,6 +123,25 @@ class ApiService {
     return token != null;
   }
 
+  Future<bool> isOnboardingDone() async {
+    final value = await _storage.read(key: AppConstants.onboardingDoneKey);
+    return value == 'true';
+  }
+
+  Future<void> setOnboardingDone(bool done) async {
+    await _storage.write(key: AppConstants.onboardingDoneKey, value: '$done');
+  }
+
+  Future<bool> isAdmin() async {
+    // For demo, check if a special key exists or if phone is admin-like
+    final value = await _storage.read(key: 'is_admin');
+    return value == 'true';
+  }
+
+  Future<void> setAdmin(bool admin) async {
+    await _storage.write(key: 'is_admin', value: '$admin');
+  }
+
   Future<bool> isDevMode() async {
     final value = await _storage.read(key: AppConstants.devModeKey);
     return value == 'true';
@@ -112,6 +149,53 @@ class ApiService {
 
   Future<void> logout() async {
     await _storage.deleteAll();
+  }
+
+  // ── SIM / Device fingerprint ──────────────────────────────────────────────
+
+  /// Builds a stable device fingerprint from platform + OS version.
+  /// On Android this is a hash of Build.FINGERPRINT equivalent fields.
+  /// Not 100% unique but sufficient to detect device swaps.
+  String _buildDeviceFingerprint() {
+    final info = [
+      Platform.operatingSystem,
+      Platform.operatingSystemVersion,
+      Platform.localHostname,
+    ].join('|');
+    return sha256.convert(utf8.encode(info)).toString();
+  }
+
+  /// Called on every app launch after login.
+  /// Compares current device fingerprint to the stored one.
+  /// If changed, reports to backend so fraud engine can flag it.
+  Future<void> checkAndReportDeviceChange() async {
+    try {
+      final currentHash = _buildDeviceFingerprint();
+      final storedHash = await _storage.read(key: AppConstants.simHashKey);
+
+      if (storedHash == null) {
+        // First time — store and register with backend
+        await _storage.write(key: AppConstants.simHashKey, value: currentHash);
+        await _dio.post('/workers/device-fingerprint', data: {
+          'fingerprint': currentHash,
+          'changed': false,
+        });
+        return;
+      }
+
+      if (storedHash != currentHash) {
+        // Device changed — report to backend immediately
+        await _dio.post('/workers/device-fingerprint', data: {
+          'fingerprint': currentHash,
+          'changed': true,
+          'previous_hash': storedHash,
+        });
+        // Update stored hash to new device
+        await _storage.write(key: AppConstants.simHashKey, value: currentHash);
+      }
+    } catch (_) {
+      // Silent fail — never block the user for this
+    }
   }
 
   // ── Worker ────────────────────────────────────────────────────────────────
@@ -230,6 +314,42 @@ class ApiService {
 
   Future<void> registerFcmToken(String token) async {
     await _dio.post('/workers/fcm-token', data: {'fcm_token': token});
+  }
+    // ── Admin ─────────────────────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> getAdminStats() async {
+    final res = await _dio.get('/admin/stats');
+    return res.data;
+  }
+
+  Future<List<dynamic>> getAdminClaims() async {
+    final res = await _dio.get('/admin/claims');
+    return res.data;
+  }
+
+  Future<List<dynamic>> getAdminDisruptions() async {
+    final res = await _dio.get('/admin/disruptions');
+    return res.data;
+  }
+
+  Future<List<dynamic>> getAdminWorkers() async {
+    final res = await _dio.get('/admin/workers');
+    return res.data;
+  }
+
+  Future<Map<String, dynamic>> getAdminDisbursementRatio() async {
+    final res = await _dio.get('/admin/disbursement-ratio');
+    return res.data;
+  }
+
+  Future<Map<String, dynamic>> getAdminAnalytics() async {
+    final res = await _dio.get('/admin/analytics');
+    return res.data;
+  }
+
+
+  Future<void> deleteAccount() async {
+    await _dio.delete('/workers/me');
   }
 
   // ── Notifications ─────────────────────────────────────────────────────────

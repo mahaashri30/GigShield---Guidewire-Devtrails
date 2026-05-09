@@ -13,6 +13,7 @@ final apiServiceProvider = Provider<ApiService>((ref) => ApiService());
 class AuthState {
   final bool isLoggedIn;
   final bool isNewUser;
+  final bool isAdmin;
   final String? workerId;
   final String? selectedPlatform;
   final bool isDevMode;
@@ -21,6 +22,7 @@ class AuthState {
   const AuthState({
     this.isLoggedIn = false,
     this.isNewUser = false,
+    this.isAdmin = false,
     this.workerId,
     this.selectedPlatform,
     this.isDevMode = false,
@@ -30,6 +32,7 @@ class AuthState {
   AuthState copyWith(
           {bool? isLoggedIn,
           bool? isNewUser,
+          bool? isAdmin,
           String? workerId,
           String? selectedPlatform,
           bool? isDevMode,
@@ -38,6 +41,7 @@ class AuthState {
       AuthState(
         isLoggedIn: isLoggedIn ?? this.isLoggedIn,
         isNewUser: isNewUser ?? this.isNewUser,
+        isAdmin: isAdmin ?? this.isAdmin,
         workerId: workerId ?? this.workerId,
         selectedPlatform: selectedPlatform ?? this.selectedPlatform,
         isDevMode: isDevMode ?? this.isDevMode,
@@ -62,9 +66,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> _checkAuth() async {
     final loggedIn = await _api.isLoggedIn();
     final isDevMode = await _api.isDevMode();
-    state = state.copyWith(isLoggedIn: loggedIn, isDevMode: isDevMode);
-    if (loggedIn) {
-      LocationService.startTracking(_api);
+    final onboardingDone = await _api.isOnboardingDone();
+    final isAdmin = await _api.isAdmin();
+
+    state = state.copyWith(
+      isLoggedIn: loggedIn && (onboardingDone || isAdmin),
+      isNewUser: loggedIn && !onboardingDone && !isAdmin,
+      isAdmin: isAdmin,
+      isDevMode: isDevMode,
+    );
+
+    if (state.isLoggedIn) {
+      if (!isAdmin) LocationService.startTracking(_api);
       await _registerFcmToken();
     }
   }
@@ -87,7 +100,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  Future<bool> verifyOtp(String phone, String otp) async {
+  Future<bool> verifyOtp(String phone, String otp, {bool asAdmin = false}) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final res = await _api.verifyOtp(phone, otp);
@@ -97,15 +110,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
         res['worker_id'],
         isDevMode: res['is_dev_mode'] == true,
       );
+      
       final isNew = res['is_new_user'] ?? false;
+      if (asAdmin) {
+        await _api.setAdmin(true);
+        await _api.setOnboardingDone(true);
+      } else {
+        await _api.setAdmin(false);
+        if (!isNew) await _api.setOnboardingDone(true);
+      }
+
       state = state.copyWith(
-        isLoggedIn: !isNew,
-        isNewUser: isNew,
+        isLoggedIn: asAdmin || !isNew,
+        isNewUser: !asAdmin && isNew,
+        isAdmin: asAdmin,
         workerId: res['worker_id'],
         isDevMode: res['is_dev_mode'] == true,
         isLoading: false,
       );
-      if (!isNew) await _registerFcmToken();
+      if (state.isLoggedIn) await _registerFcmToken();
       return isNew;
     } catch (e) {
       state =
@@ -114,7 +137,38 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  Future<void> adminLogin(String email, String password) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final res = await _api.adminLogin(email, password);
+      await _api.saveTokens(
+        res['access_token'],
+        res['refresh_token'],
+        res['worker_id'],
+        isDevMode: res['is_dev_mode'] == true,
+      );
+      await _api.setAdmin(true);
+      await _api.setOnboardingDone(true);
+      
+      state = state.copyWith(
+        isLoggedIn: true,
+        isNewUser: false,
+        isAdmin: true,
+        workerId: res['worker_id'],
+        isDevMode: res['is_dev_mode'] == true,
+        isLoading: false,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Invalid email or password.',
+      );
+      rethrow;
+    }
+  }
+
   Future<void> completeRegistration() async {
+    await _api.setOnboardingDone(true);
     state = state.copyWith(isLoggedIn: true, isNewUser: false);
     LocationService.startTracking(_api);
     await _registerFcmToken();

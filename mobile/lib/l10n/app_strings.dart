@@ -56,7 +56,7 @@ class AppStrings {
   final String claim;
   final String aiAuto;
   final String dss;
-  final String fraudScore;
+  final String eligibilityScore;
   final String claimed;
   final String pending;
   final String approved;
@@ -173,7 +173,7 @@ class AppStrings {
     required this.claim,
     required this.aiAuto,
     required this.dss,
-    required this.fraudScore,
+    required this.eligibilityScore,
     required this.claimed,
     required this.pending,
     required this.approved,
@@ -295,7 +295,7 @@ const _en = AppStrings(
   claim: 'Claim',
   aiAuto: 'AI Auto',
   dss: 'DSS',
-  fraudScore: 'Fraud Score',
+  eligibilityScore: 'Eligibility Score',
   claimed: 'Claimed',
   pending: 'Pending',
   approved: 'Approved',
@@ -419,7 +419,7 @@ const _ta = AppStrings(
   claim: 'கோரிக்கை',
   aiAuto: 'AI தானியங்கி',
   dss: 'DSS',
-  fraudScore: 'மோசடி மதிப்பெண்',
+  eligibilityScore: 'தகுதி மதிப்பெண்',
   claimed: 'கோரப்பட்டது',
   pending: 'நிலுவையில்',
   approved: 'அங்கீகரிக்கப்பட்டது',
@@ -542,7 +542,7 @@ const _hi = AppStrings(
   claim: 'दावा',
   aiAuto: 'AI स्वतः',
   dss: 'DSS',
-  fraudScore: 'धोखाधड़ी स्कोर',
+  eligibilityScore: 'पात्रता स्कोर',
   claimed: 'दावा किया',
   pending: 'लंबित',
   approved: 'स्वीकृत',

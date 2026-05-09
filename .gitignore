@@ -13,9 +13,10 @@ backend/.env
 backend/*-firebase-adminsdk*.json
 mobile/android/app/google-services.json
 
-# ML models (large binary files)
+# ML models and large data files
 backend/ml/**/*.joblib
 backend/ml/**/*.pkl
+backend/ml/**/*.csv
 
 # Temp token files
 tok.json

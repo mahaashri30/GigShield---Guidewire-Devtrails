@@ -82,12 +82,21 @@ class Worker(Base):
     is_verified = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     avg_daily_earnings = Column(Float, default=600.0)
+    avg_online_hours_per_day = Column(Float, default=9.0)   # hours logged into platform app
+    avg_orders_per_day = Column(Float, default=18.0)        # orders accepted+completed on normal day
     active_days_30 = Column(Integer, default=0, nullable=True)  # active delivery days in last 30 days
     risk_score = Column(Float, default=0.5)
     last_known_lat = Column(Float, nullable=True)
     last_known_lng = Column(Float, nullable=True)
     last_location_at = Column(DateTime(timezone=True), nullable=True)
     fcm_token = Column(String(200), nullable=True)  # Firebase push token
+    # Device fingerprint / SIM-change locking (banking-app style)
+    device_fingerprint = Column(String(200), nullable=True)
+    sim_hash = Column(String(64), nullable=True)
+    sim_changed_at = Column(DateTime(timezone=True), nullable=True)
+    # Soft delete fields
+    is_deleted = Column(Boolean, default=False, nullable=False)
+    deletion_requested_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -191,6 +200,56 @@ class Payout(Base):
     claim = relationship("Claim", back_populates="payout")
 
 
+class WorkerDeliveryGrid(Base):
+    """
+    Worker's personal delivery grid — built gradually from GPS pings.
+    Represents the actual area the worker delivers in, not just their
+    registered city/pincode.
+
+    Updated on every GPS ping (non-suspicious only).
+    Used for:
+      - Proximity check in claims (is disruption inside worker's grid?)
+      - Premium zone_risk (worker's actual delivery zone risk, not city average)
+      - Fraud detection (claim from outside usual delivery area)
+
+    Grid fields:
+      bbox_*     : bounding box (min/max lat/lng) — fast containment check
+      center_*   : centroid of all pings — worker's "home base"
+      radius_km  : radius of delivery area from centroid
+      ping_count : total non-suspicious pings used to build this grid
+      active_days: distinct days with pings (proxy for working days)
+    """
+    __tablename__ = "worker_delivery_grids"
+
+    id          = Column(String, primary_key=True, default=gen_uuid)
+    worker_id   = Column(String, ForeignKey("workers.id"), nullable=False, unique=True)
+    # Bounding box
+    bbox_lat_min = Column(Float, nullable=True)
+    bbox_lat_max = Column(Float, nullable=True)
+    bbox_lng_min = Column(Float, nullable=True)
+    bbox_lng_max = Column(Float, nullable=True)
+    # Centroid
+    center_lat  = Column(Float, nullable=True)
+    center_lng  = Column(Float, nullable=True)
+    # Delivery radius from centroid (km)
+    radius_km   = Column(Float, nullable=True)
+    # P90 radius — 90% of pings fall within this distance from centroid
+    # More robust than max radius (ignores outlier pings)
+    p90_radius_km = Column(Float, nullable=True)
+    # Stats
+    ping_count  = Column(Integer, default=0)
+    active_days = Column(Integer, default=0)
+    # Dominant pincode and city (most frequent in pings)
+    dominant_pincode = Column(String(10), nullable=True)
+    dominant_city    = Column(String(100), nullable=True)
+    # Timestamps
+    first_ping_at = Column(DateTime(timezone=True), nullable=True)
+    last_ping_at  = Column(DateTime(timezone=True), nullable=True)
+    updated_at    = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    worker = relationship("Worker", backref="delivery_grid")
+
+
 class WorkerLocationPing(Base):
     """Stores worker GPS pings every 10 min during active hours for anti-spoofing."""
     __tablename__ = "worker_location_pings"
@@ -203,6 +262,7 @@ class WorkerLocationPing(Base):
     speed_kmh = Column(Float, nullable=True)      # km/h since last ping — >200 = spoof
     distance_km = Column(Float, nullable=True)    # km from last ping
     is_suspicious = Column(Boolean, default=False) # flagged if impossible movement
+    gap_minutes = Column(Float, nullable=True)        # minutes since last ping — large gap = device was off
     city_detected = Column(String(100), nullable=True)
     pincode_detected = Column(String(10), nullable=True)
     recorded_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -224,5 +284,53 @@ class WorkerNotification(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     worker = relationship("Worker", back_populates="notifications")
+
+
+class DeletedAccountArchive(Base):
+    """
+    Production-level account deletion archive.
+
+    When a worker requests account deletion:
+      1. A snapshot of their PII + financial summary is stored here.
+      2. The worker row is anonymised (PII wiped, is_deleted=True).
+      3. Financial records (claims, policies, payouts) are KEPT but
+         detached from PII — required for actuarial, regulatory, and
+         fraud audit purposes (IRDAI mandates 5-year retention).
+      4. Non-financial data (GPS pings, notifications, FCM) is hard deleted.
+      5. After 30 days, a scheduled job permanently purges the worker row.
+
+    This table is admin-only and never exposed to the worker API.
+    """
+    __tablename__ = "deleted_account_archives"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    original_worker_id = Column(String, nullable=False, index=True)
+    # PII snapshot (encrypted at rest via RDS encryption)
+    phone_hash = Column(String(64), nullable=False)       # SHA-256 of phone — for re-registration block
+    name_redacted = Column(String(20), nullable=False)    # First 2 chars + *** e.g. "Ra***"
+    city = Column(String(100), nullable=True)             # Non-PII, kept for actuarial
+    platform = Column(String(50), nullable=True)          # Non-PII, kept for actuarial
+    # Financial summary (kept for IRDAI 5-year retention)
+    total_policies = Column(Integer, default=0)
+    total_claims = Column(Integer, default=0)
+    total_premium_paid = Column(Float, default=0.0)
+    total_claims_paid = Column(Float, default=0.0)
+    # Deletion metadata
+    deletion_requested_at = Column(DateTime(timezone=True), nullable=False)
+    deletion_reason = Column(String(200), nullable=True)  # Optional reason from user
+    grace_period_ends_at = Column(DateTime(timezone=True), nullable=False)  # 30 days
+    permanently_purged_at = Column(DateTime(timezone=True), nullable=True)  # Set by scheduled job
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+
+class Admin(Base):
+    __tablename__ = "admins"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    email = Column(String(200), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(200), nullable=False)
+    name = Column(String(100), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

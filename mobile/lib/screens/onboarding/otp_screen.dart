@@ -9,7 +9,8 @@ import 'dart:async';
 
 class OtpScreen extends ConsumerStatefulWidget {
   final String phone;
-  const OtpScreen({super.key, required this.phone});
+  final bool asAdmin;
+  const OtpScreen({super.key, required this.phone, this.asAdmin = false});
 
   @override
   ConsumerState<OtpScreen> createState() => _OtpScreenState();
@@ -45,8 +46,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
 
   void _verify(String otp) async {
     if (otp.length != 6) return;
-    final isNew =
-        await ref.read(authProvider.notifier).verifyOtp(widget.phone, otp);
+    final isNew = await ref
+        .read(authProvider.notifier)
+        .verifyOtp(widget.phone, otp, asAdmin: widget.asAdmin);
     if (!mounted) return;
     if (ref.read(authProvider).error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -57,7 +59,11 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       return;
     }
     _registerFcmToken();
-    context.go(isNew ? '/auth/register' : '/home');
+    if (widget.asAdmin) {
+      context.go('/admin/dashboard');
+    } else {
+      context.go(isNew ? '/auth/platform' : '/home');
+    }
   }
 
   void _registerFcmToken() async {

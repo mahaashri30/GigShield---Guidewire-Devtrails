@@ -174,7 +174,7 @@ TRAFFIC_SCENARIOS = {
 
 
 def is_real_api_key(value: Optional[str]) -> bool:
-    return bool(value and value != "mock_key" and not value.startswith("your_"))
+    return bool(value and not value.startswith("your_"))
 
 
 async def fetch_weather_mock(city: str) -> dict:
@@ -190,7 +190,7 @@ async def fetch_weather_mock(city: str) -> dict:
 
 async def fetch_aqi_real(city: str) -> dict:
     """Real AQI from OpenWeatherMap Air Pollution API."""
-    if settings.OPENWEATHER_API_KEY == "mock_key":
+    if not is_real_api_key(settings.OPENWEATHER_API_KEY):
         return await fetch_aqi_mock(city)
     city_coords = {
         "Delhi": (28.6139, 77.2090), "Mumbai": (19.0760, 72.8777),
@@ -212,7 +212,7 @@ async def fetch_aqi_real(city: str) -> dict:
             ow_aqi = data["list"][0]["main"]["aqi"]
             aqi_map = {1: 50, 2: 100, 3: 200, 4: 300, 5: 400}
             return {"aqi": aqi_map.get(ow_aqi, 100), "city": city}
-        except Exception:
+        except (httpx.HTTPError, KeyError, ValueError, TypeError, IndexError):
             return await fetch_aqi_mock(city)
 
 
@@ -264,7 +264,7 @@ async def fetch_civic_real(city: str) -> Optional[tuple]:
 
             description = articles[0].get("title", "Civic disruption detected")[:120]
             return severity, description, civic_type
-    except Exception as e:
+    except (httpx.HTTPError, KeyError, ValueError, TypeError, IndexError) as e:
         print("[NewsAPI ERROR] " + str(e))
         return await fetch_civic_twitter_dev_fallback(city)
 
@@ -303,7 +303,7 @@ async def fetch_civic_twitter_dev_fallback(city: str) -> Optional[tuple]:
     except tweepy.TweepyException as e:
         print("[Twitter API FALLBACK ERROR] " + str(e))
         return fetch_civic_mock(city)
-    except Exception as e:
+    except (AttributeError, ValueError) as e:
         print("[Twitter API FALLBACK ERROR] Unexpected error: " + str(e))
         return fetch_civic_mock(city)
 
@@ -312,12 +312,85 @@ def fetch_civic_mock(city: str) -> Optional[tuple]:
     return random.choice(CIVIC_SCENARIOS.get(city, [None, None, None]))
 
 
+async def fetch_traffic_real(city: str, lat: float = 0.0, lng: float = 0.0) -> Optional[tuple]:
+    """
+    Real traffic congestion via TomTom Flow Segment API.
+    Uses GPS coordinates — works for ANY location in India, not just hardcoded cities.
+
+    Flow: lat/lng → TomTom currentSpeed vs freeFlowSpeed → congestion index.
+    Congestion index = ((freeFlow - current) / freeFlow) * 100
+      0-39  → normal, no disruption
+      40-69 → moderate disruption
+      70+   → severe disruption
+
+    Falls back to mock if TomTom key not configured or coords unavailable.
+    """
+    if not settings.TOMTOM_API_KEY:
+        return fetch_traffic_mock(city)
+
+    # If no coords passed, resolve from city name via geocoding cache
+    if not lat or not lng:
+        try:
+            from app.services.geocoding_service import resolve_city
+            _, lat, lng = await resolve_city(city)
+        except Exception:
+            pass
+
+    if not lat or not lng:
+        return fetch_traffic_mock(city)
+
+    try:
+        async with httpx.AsyncClient() as client:
+            # TomTom Flow Segment Data API — returns speed at a road segment
+            # near the given coordinates. zoom=10 gives city-level road data.
+            r = await client.get(
+                f"https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json",
+                params={
+                    "point": f"{lat},{lng}",
+                    "key": settings.TOMTOM_API_KEY,
+                    "unit": "KMPH",
+                },
+                timeout=6.0,
+            )
+            data = r.json()
+            flow = data.get("flowSegmentData", {})
+            current_speed  = float(flow.get("currentSpeed", 0))
+            free_flow_speed = float(flow.get("freeFlowSpeed", 0))
+
+            if free_flow_speed <= 0 or current_speed <= 0:
+                return None
+
+            # Congestion: how much speed has dropped from free-flow
+            congestion_index = round((free_flow_speed - current_speed) / free_flow_speed * 100)
+
+            if congestion_index < 40:
+                return None  # Normal traffic
+            elif congestion_index < 70:
+                desc = (
+                    f"Heavy traffic near {city} — "
+                    f"roads at {current_speed:.0f} km/h vs normal {free_flow_speed:.0f} km/h "
+                    f"({congestion_index}% slower)"
+                )
+                return DisruptionSeverity.MODERATE, desc, congestion_index
+            else:
+                desc = (
+                    f"Severe gridlock near {city} — "
+                    f"roads at {current_speed:.0f} km/h vs normal {free_flow_speed:.0f} km/h "
+                    f"({congestion_index}% slower)"
+                )
+                return DisruptionSeverity.SEVERE, desc, congestion_index
+
+    except (httpx.HTTPError, KeyError, TypeError, ValueError) as e:
+        print(f"[TomTom Traffic ERROR] {city}: {e}")
+        return fetch_traffic_mock(city)
+
+
 def fetch_traffic_mock(city: str) -> Optional[tuple]:
     return random.choice(TRAFFIC_SCENARIOS.get(city, [None, None, None]))
 
 
 async def fetch_weather_real(city: str) -> dict:
-    if settings.OPENWEATHER_API_KEY == "mock_key":
+    if not is_real_api_key(settings.OPENWEATHER_API_KEY):
         return await fetch_weather_mock(city)
     async with httpx.AsyncClient() as client:
         try:
@@ -334,7 +407,7 @@ async def fetch_weather_real(city: str) -> dict:
                 "temperature_c": data["main"]["temp"],
                 "description": data["weather"][0]["description"],
             }
-        except Exception:
+        except (httpx.HTTPError, KeyError, ValueError, TypeError, IndexError):
             return await fetch_weather_mock(city)
 
 
@@ -375,33 +448,58 @@ def classify_aqi(aqi: int) -> Optional[tuple]:
     return None
 
 
-async def check_disruptions(city: str, pincode: str) -> list:
-    """Check all 5 disruption triggers with hyper-local DSS adjustment."""
+def check_disruption_cleared(disruption_type: DisruptionType, weather: dict, aqi: dict) -> bool:
+    """
+    Returns True if the sensor reading for this disruption type is back to normal.
+    Used by the poller to close active events and set ended_at.
+    """
+    if disruption_type == DisruptionType.HEAVY_RAIN:
+        return weather.get("rainfall_mm_per_hr", 0) < 7.6
+    elif disruption_type == DisruptionType.EXTREME_HEAT:
+        return weather.get("temperature_c", 30) < 42.0
+    elif disruption_type == DisruptionType.AQI_SPIKE:
+        return aqi.get("aqi", 0) <= 200
+    # Traffic and civic events are closed manually / after fixed duration — not sensor-driven
+    return False
+
+
+async def check_disruptions(city: str, pincode: str, lat: float = 0.0, lng: float = 0.0) -> list:
+    """Check all 5 disruption triggers. DSS calculated via ML engine at detection time."""
+    from app.services.dss_service import calculate_dss
+    from datetime import datetime
+    month = datetime.now().month
+
     events = []
-    weather = await fetch_weather_real(city)
+    weather  = await fetch_weather_real(city)
     aqi_data = await fetch_aqi_real(city)
 
     rain_result = classify_rain(weather.get("rainfall_mm_per_hr", 0))
     if rain_result:
         severity, desc = rain_result
+        dss_result = await calculate_dss(
+            DisruptionType.HEAVY_RAIN, severity, city, pincode,
+            raw_value=weather["rainfall_mm_per_hr"], month=month,
+        )
         events.append({
             "disruption_type": DisruptionType.HEAVY_RAIN,
-            "severity": severity,
-            "city": city, "pincode": pincode,
-            "dss_multiplier": get_dss(DisruptionType.HEAVY_RAIN, severity, city, pincode),
+            "severity": severity, "city": city, "pincode": pincode,
+            "dss_multiplier": dss_result["dss"],
             "raw_value": weather["rainfall_mm_per_hr"],
-            "description": desc + f" | Infra score: {get_infra_score(city, pincode)}",
+            "description": desc + f" | infra={dss_result['infra_score']:.2f} method={dss_result['method']}",
             "source": "OpenWeather API",
         })
 
     heat_result = classify_heat(weather.get("temperature_c", 30))
     if heat_result:
         severity, desc = heat_result
+        dss_result = await calculate_dss(
+            DisruptionType.EXTREME_HEAT, severity, city, pincode,
+            raw_value=weather["temperature_c"], month=month,
+        )
         events.append({
             "disruption_type": DisruptionType.EXTREME_HEAT,
-            "severity": severity,
-            "city": city, "pincode": pincode,
-            "dss_multiplier": get_dss(DisruptionType.EXTREME_HEAT, severity, city, pincode),
+            "severity": severity, "city": city, "pincode": pincode,
+            "dss_multiplier": dss_result["dss"],
             "raw_value": weather["temperature_c"],
             "description": desc,
             "source": "OpenWeather API",
@@ -410,38 +508,49 @@ async def check_disruptions(city: str, pincode: str) -> list:
     aqi_result = classify_aqi(aqi_data.get("aqi", 0))
     if aqi_result:
         severity, desc = aqi_result
+        dss_result = await calculate_dss(
+            DisruptionType.AQI_SPIKE, severity, city, pincode,
+            raw_value=aqi_data["aqi"], month=month,
+        )
         events.append({
             "disruption_type": DisruptionType.AQI_SPIKE,
-            "severity": severity,
-            "city": city, "pincode": pincode,
-            "dss_multiplier": get_dss(DisruptionType.AQI_SPIKE, severity, city, pincode),
+            "severity": severity, "city": city, "pincode": pincode,
+            "dss_multiplier": dss_result["dss"],
             "raw_value": aqi_data["aqi"],
             "description": desc,
             "source": "OpenWeather Air Pollution API",
         })
 
-    traffic_result = fetch_traffic_mock(city)
+    # Traffic: pass real coordinates so TomTom works for any location in India
+    traffic_result = await fetch_traffic_real(city, lat=lat, lng=lng)
     if traffic_result:
         severity, desc, congestion_index = traffic_result
+        dss_result = await calculate_dss(
+            DisruptionType.TRAFFIC_DISRUPTION, severity, city, pincode,
+            raw_value=float(congestion_index),
+            raw_value2=weather.get("temperature_c", 30.0),
+            month=month,
+        )
         events.append({
             "disruption_type": DisruptionType.TRAFFIC_DISRUPTION,
-            "severity": severity,
-            "city": city, "pincode": pincode,
-            "dss_multiplier": get_dss(DisruptionType.TRAFFIC_DISRUPTION, severity, city, pincode),
+            "severity": severity, "city": city, "pincode": pincode,
+            "dss_multiplier": dss_result["dss"],
             "raw_value": float(congestion_index),
             "description": desc,
-            "source": "Traffic Monitor (Mock)",
+            "source": "TomTom Traffic API" if settings.TOMTOM_API_KEY else "Traffic Monitor (Mock)",
         })
 
-    # 5. Civic emergency — real NewsAPI detection
     civic_result = await fetch_civic_real(city)
     if civic_result:
         severity, desc, civic_type = civic_result
+        dss_result = await calculate_dss(
+            DisruptionType.CIVIC_EMERGENCY, severity, city, pincode,
+            month=month,
+        )
         events.append({
             "disruption_type": DisruptionType.CIVIC_EMERGENCY,
-            "severity": severity,
-            "city": city, "pincode": pincode,
-            "dss_multiplier": get_dss(DisruptionType.CIVIC_EMERGENCY, severity, city, pincode),
+            "severity": severity, "city": city, "pincode": pincode,
+            "dss_multiplier": dss_result["dss"],
             "raw_value": None,
             "description": desc,
             "source": f"Civic Alert ({civic_type})",

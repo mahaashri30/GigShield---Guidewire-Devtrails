@@ -98,6 +98,20 @@ SEASON_FACTORS = {
 }
 
 
+def get_dynamic_caps(tier: PolicyTier, city: str) -> tuple[float, float]:
+    """
+    Dynamic daily/weekly payout caps adjusted by city Cost of Living.
+    Mumbai worker can claim more in absolute terms than Patna worker
+    because their actual income loss is higher.
+    Returns (daily_cap, weekly_cap).
+    """
+    from app.services.platform_service import get_col_index
+    col = get_col_index(city)
+    daily_cap = round(MAX_DAILY_PAYOUT[tier] * col, 0)
+    weekly_cap = round(MAX_WEEKLY_PAYOUT[tier] * col, 0)
+    return daily_cap, weekly_cap
+
+
 def get_zone_risk(pincode: str) -> float:
     prefix = pincode[:3] if len(pincode) >= 3 else "000"
     return ZONE_RISK.get(prefix, 1.0)
@@ -107,11 +121,25 @@ def get_season_factor() -> float:
     return SEASON_FACTORS.get(datetime.now().month, 1.0)
 
 
+async def get_zone_risk_ai(city: str, pincode: str) -> float:
+    """
+    AI-powered zone risk — uses infra_service to score any city/pincode.
+    Converts infra score (0.3-1.0) to a risk multiplier (0.9-1.5).
+    Better infra = lower multiplier = lower premium.
+    """
+    from app.services.infra_service import get_infra_score
+    infra = await get_infra_score(city, pincode)
+    # Map infra score 0.3→0.9 and 1.0→1.5 linearly
+    risk_multiplier = round(0.9 + (infra - 0.30) * (0.6 / 0.70), 3)
+    return max(0.9, min(1.5, risk_multiplier))
+
+
 def _ml_predict_premium(
     tier: PolicyTier,
     pincode: str,
     worker_history_factor: float,
     platform_activity_score: float,
+    zone_risk: float = 1.0,
 ) -> float | None:
     """Use XGBoost model if available; return None to fall back to rule-based."""
     if _ml_model is None:
@@ -120,43 +148,58 @@ def _ml_predict_premium(
         prefix = int(pincode[:1]) if pincode else 0
         month = datetime.now().month
         tier_idx = _TIER_IDX[tier]
-        tenure_weeks = 0  # unknown at quote time; use 0 (conservative)
-        zone_risk = get_zone_risk(pincode)
+        tenure_weeks = 0
         season = get_season_factor()
-        # Use moderate rain (0) as default disruption context for premium quoting
         features = np.array([[prefix, month, tier_idx, tenure_weeks,
                                platform_activity_score, zone_risk, season,
                                0, 0, 0.3, 0]])
         pred = float(_ml_model.predict(features)[0])
         base = BASE_PREMIUMS[tier]
-        # Clamp to ±40% of base to prevent wild extrapolation
         return round(max(base * 0.6, min(base * 1.6, pred * worker_history_factor)), 2)
     except Exception:
         return None
 
 
-def calculate_premium(
+async def calculate_premium(
     tier: PolicyTier,
     pincode: str,
+    city: str = "",
     worker_history_factor: float = 1.0,
     platform_activity_score: float = 1.0,
+    no_claims_weeks: int = 0,
+    policy_count: int = 1,
 ) -> dict:
     """
     Calculate dynamic weekly premium.
-    Uses XGBoost ML model when available, falls back to rule-based formula.
-    Zone risk uses ward-level (6-digit) pincode when available, else 3-digit prefix.
-    Formula (fallback): Premium = Base × Zone_Risk × Season_Factor × Worker_History × Platform_Activity
+    Uses AI infra scoring for any city/pincode in India.
+    Falls back to XGBoost ML model, then rule-based formula.
+
+    Feedback loop discounts:
+      no_claims_weeks: consecutive weeks with zero claims → up to 15% discount
+      policy_count: number of times worker has renewed → loyalty discount up to 8%
     """
     base = BASE_PREMIUMS[tier]
-    zone_risk = get_sub_zone_risk(pincode)  # ward-level if known, else 3-digit zone
     season = get_season_factor()
 
-    ml_premium = _ml_predict_premium(tier, pincode, worker_history_factor, platform_activity_score)
+    # AI-powered zone risk — works for any city in India
+    if city:
+        zone_risk = await get_zone_risk_ai(city, pincode)
+    else:
+        zone_risk = get_sub_zone_risk(pincode)
+
+    ml_premium = _ml_predict_premium(tier, pincode, worker_history_factor, platform_activity_score, zone_risk)
     if ml_premium is not None:
-        adjusted = ml_premium
+        adjusted = round(ml_premium * zone_risk * season, 2)
     else:
         adjusted = base * zone_risk * season * worker_history_factor * platform_activity_score
         adjusted = round(adjusted, 2)
+
+    # No-claims discount: 5% per 4 consecutive claim-free weeks, max 15%
+    no_claims_discount = min(0.15, (no_claims_weeks // 4) * 0.05)
+    # Continuing insurer (loyalty) discount: 4% per renewal, max 8%
+    loyalty_discount = min(0.08, (max(0, policy_count - 1)) * 0.04)
+    total_discount = no_claims_discount + loyalty_discount
+    adjusted = round(adjusted * (1 - total_discount), 2)
 
     return {
         "tier": tier,
@@ -166,13 +209,16 @@ def calculate_premium(
         "season_factor": season,
         "worker_history_factor": worker_history_factor,
         "platform_activity_score": platform_activity_score,
+        "no_claims_discount": round(no_claims_discount * 100, 1),
+        "loyalty_discount": round(loyalty_discount * 100, 1),
+        "total_discount_pct": round(total_discount * 100, 1),
         "max_daily_payout": MAX_DAILY_PAYOUT[tier],
         "max_weekly_payout": MAX_WEEKLY_PAYOUT[tier],
         "risk_breakdown": {
             "base": base,
             "after_zone": round(base * zone_risk, 2),
             "after_season": round(base * zone_risk * season, 2),
-            "final": adjusted,
+            "after_discounts": adjusted,
         },
     }
 
@@ -183,26 +229,37 @@ def calculate_payout(
     active_hours_ratio: float,
     tier: PolicyTier,
     existing_claimed_today: float = 0.0,
+    city: str = "",
+    use_subsistence_adjustment: bool = False,
 ) -> dict:
     """
-    Payout = income the worker LOST due to the disruption.
+    Payout = actual income loss, optionally adjusted for cost of living.
 
-    Formula:
-    - Expected earnings for the day  = worker_daily_avg
-    - Income shortfall (= payout)    = worker_daily_avg × DSS × active_hours_ratio
-    
-    Example: 
-    If daily avg = ₹1000, DSS = 0.5 (50% disruption), and ratio = 0.4 (40% of day remaining),
-    Shortfall = 1000 * 0.5 * 0.4 = ₹200.
+    use_subsistence_adjustment=False (default):
+      Fixed payout — worker receives full raw_loss regardless of savings habits.
+      Preferred for standard insurance products.
 
-    Capped at (tier daily cap - already claimed today) to prevent over-compensation.
+    use_subsistence_adjustment=True:
+      Net-loss payout — effective_loss = raw_loss × (1 - subsistence_ratio × 0.5)
+      Reflects real hardship: Mumbai rider (ratio=0.58) vs Coimbatore rider (ratio=0.40).
+
+    Capped at CoL-adjusted daily cap.
     """
-    income_shortfall  = round(worker_daily_avg * dss_multiplier * active_hours_ratio, 2)
-    estimated_actual  = round(worker_daily_avg * (1 - (dss_multiplier * active_hours_ratio)), 2)
+    from app.services.platform_service import get_city_economics, DEFAULT_SUBSISTENCE
+    col_index, subsistence_ratio = get_city_economics(city) if city else (1.0, DEFAULT_SUBSISTENCE)
 
-    daily_cap         = MAX_DAILY_PAYOUT[tier]
-    remaining_cap     = max(0.0, daily_cap - existing_claimed_today)
-    approved_amount   = round(min(income_shortfall, remaining_cap), 2)
+    raw_loss = round(worker_daily_avg * dss_multiplier * active_hours_ratio, 2)
+    if use_subsistence_adjustment:
+        effective_loss = round(raw_loss * (1 - subsistence_ratio * 0.5), 2)
+    else:
+        effective_loss = raw_loss
+
+    # Dynamic cap based on CoL
+    daily_cap = round(MAX_DAILY_PAYOUT[tier] * col_index, 2)
+    remaining_cap = max(0.0, daily_cap - existing_claimed_today)
+    approved_amount = round(min(effective_loss, remaining_cap), 2)
+
+    estimated_actual = round(worker_daily_avg * (1 - dss_multiplier * active_hours_ratio), 2)
 
     return {
         "worker_daily_avg":   worker_daily_avg,
@@ -210,10 +267,13 @@ def calculate_payout(
         "active_hours_ratio": active_hours_ratio,
         "expected_earnings":  worker_daily_avg,
         "estimated_actual":   estimated_actual,
-        "income_shortfall":   income_shortfall,
-        "raw_payout":         income_shortfall,
+        "income_shortfall":   raw_loss,
+        "subsistence_ratio":  subsistence_ratio,
+        "effective_loss":     effective_loss,
+        "raw_payout":         effective_loss,
         "tier_cap":           daily_cap,
         "remaining_cap":      remaining_cap,
         "approved_amount":    approved_amount,
-        "capped":             income_shortfall > remaining_cap,
+        "capped":             effective_loss > remaining_cap,
+        "col_index":          col_index,
     }

@@ -1,12 +1,244 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:susanoo/providers/locale_provider.dart';
+import 'package:susanoo/providers/app_providers.dart';
+import 'package:susanoo/services/location_service.dart';
 import 'package:susanoo/theme/app_theme.dart';
 
-class ShellScreen extends ConsumerWidget {
+class ShellScreen extends ConsumerStatefulWidget {
   final Widget child;
   const ShellScreen({super.key, required this.child});
+
+  @override
+  ConsumerState<ShellScreen> createState() => _ShellScreenState();
+}
+
+class _ShellScreenState extends ConsumerState<ShellScreen> {
+  // Root-level tabs — back on these should prompt exit
+  static const _rootRoutes = {'/home', '/policy', '/claims', '/risk', '/profile'};
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      LocationService.startTracking(ref.read(apiServiceProvider));
+      // Request location permission now that user is logged in
+      _requestLocationPermission();
+    });
+  }
+
+  Future<void> _requestLocationPermission() async {
+    final permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.always ||
+        permission == LocationPermission.whileInUse) return;
+    if (permission == LocationPermission.deniedForever) {
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (mounted) _showSettingsDialog();
+      return;
+    }
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (mounted) _showPermissionDialog();
+  }
+
+  void _showSettingsDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          contentPadding: const EdgeInsets.all(24),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.location_off_rounded, color: Color(0xFFF59E0B), size: 48),
+              const SizedBox(height: 16),
+              const Text('Location Access Needed',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              const Text(
+                'Please enable location in Settings so Susanoo can detect disruptions in your delivery zone.',
+                style: TextStyle(fontSize: 14, color: Color(0xFF6B7280), height: 1.5),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await openAppSettings();
+                    await Future.delayed(const Duration(milliseconds: 500));
+                    if (mounted) _requestLocationPermission();
+                  },
+                  child: const Text('Open Settings'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showPermissionDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          contentPadding: const EdgeInsets.all(24),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: const BoxDecoration(
+                    color: Color(0xFFEFF6FF), shape: BoxShape.circle),
+                child: const Icon(Icons.location_on_rounded,
+                    color: Color(0xFF1A56DB), size: 36),
+              ),
+              const SizedBox(height: 20),
+              const Text('Allow Location Access',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              const Text(
+                'Susanoo uses your location to detect disruptions in your delivery zone and auto-trigger claims.',
+                style: TextStyle(fontSize: 14, color: Color(0xFF6B7280), height: 1.5),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF8E1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFFFE082)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFFF59E0B)),
+                    SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Location is required to detect disruptions and process claims.',
+                        style: TextStyle(fontSize: 11, color: Color(0xFF78350F)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    final result = await Geolocator.requestPermission();
+                    if (result == LocationPermission.deniedForever && mounted) {
+                      _showSettingsDialog();
+                    } else if (result == LocationPermission.denied && mounted) {
+                      await Future.delayed(const Duration(milliseconds: 400));
+                      if (mounted) _showPermissionDialog();
+                    }
+                  },
+                  child: const Text('Allow Location'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    LocationService.stopTracking();
+    super.dispose();
+  }
+
+  bool _isRootRoute(BuildContext context) {
+    final loc = GoRouterState.of(context).matchedLocation;
+    return _rootRoutes.contains(loc);
+  }
+
+  Future<bool> _onWillPop(BuildContext context) async {
+    if (!_isRootRoute(context)) {
+      context.pop();
+      return false;
+    }
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.all(24),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: const BoxDecoration(
+                color: AppTheme.primaryLight,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.exit_to_app_rounded,
+                  color: AppTheme.primary, size: 32),
+            ),
+            const SizedBox(height: 16),
+            const Text('Exit Susanoo?',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                textAlign: TextAlign.center),
+            const SizedBox(height: 8),
+            const Text(
+              'Your shield stays active. You can return anytime.',
+              style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.5),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: AppTheme.divider),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: const Text('Stay', style: TextStyle(color: AppTheme.textPrimary)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.danger,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: const Text('Exit', style: TextStyle(color: Colors.white)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+    return shouldExit == true;
+  }
 
   int _locationIndex(BuildContext context) {
     final loc = GoRouterState.of(context).matchedLocation;
@@ -18,48 +250,51 @@ class ShellScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final idx = _locationIndex(context);
     final s = ref.watch(stringsProvider);
-    return Scaffold(
-      body: child,
-      bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: AppTheme.divider, width: 0.5)),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _NavItem(
-                    icon: Icons.home_rounded,
-                    label: s.home,
-                    active: idx == 0,
-                    onTap: () => context.go('/home')),
-                _NavItem(
-                    icon: Icons.shield_rounded,
-                    label: s.policy,
-                    active: idx == 1,
-                    onTap: () => context.go('/policy')),
-                _NavItem(
-                    icon: Icons.receipt_long_rounded,
-                    label: s.claims,
-                    active: idx == 2,
-                    onTap: () => context.go('/claims')),
-                _NavItem(
-                    icon: Icons.monitor_heart_rounded,
-                    label: s.risk,
-                    active: idx == 3,
-                    onTap: () => context.go('/risk')),
-                _NavItem(
-                    icon: Icons.person_rounded,
-                    label: s.profile,
-                    active: idx == 4,
-                    onTap: () => context.go('/profile')),
-              ],
+    return WillPopScope(
+      onWillPop: () => _onWillPop(context),
+      child: Scaffold(
+        body: widget.child,
+        bottomNavigationBar: Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(top: BorderSide(color: AppTheme.divider, width: 0.5)),
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _NavItem(
+                      icon: Icons.home_rounded,
+                      label: s.home,
+                      active: idx == 0,
+                      onTap: () => context.go('/home')),
+                  _NavItem(
+                      icon: Icons.shield_rounded,
+                      label: s.policy,
+                      active: idx == 1,
+                      onTap: () => context.go('/policy')),
+                  _NavItem(
+                      icon: Icons.receipt_long_rounded,
+                      label: s.claims,
+                      active: idx == 2,
+                      onTap: () => context.go('/claims')),
+                  _NavItem(
+                      icon: Icons.monitor_heart_rounded,
+                      label: s.risk,
+                      active: idx == 3,
+                      onTap: () => context.go('/risk')),
+                  _NavItem(
+                      icon: Icons.person_rounded,
+                      label: s.profile,
+                      active: idx == 4,
+                      onTap: () => context.go('/profile')),
+                ],
+              ),
             ),
           ),
         ),

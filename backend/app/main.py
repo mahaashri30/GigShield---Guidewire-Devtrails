@@ -17,6 +17,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
         # Add new columns if they don't exist (safe migration)
         new_columns = [
+            "ALTER TABLE workers ADD COLUMN IF NOT EXISTS avg_online_hours_per_day FLOAT DEFAULT 9.0",
+            "ALTER TABLE workers ADD COLUMN IF NOT EXISTS avg_orders_per_day FLOAT DEFAULT 18.0",
             "ALTER TABLE workers ADD COLUMN IF NOT EXISTS active_days_30 INTEGER DEFAULT 0",
             "ALTER TABLE workers ADD COLUMN IF NOT EXISTS last_known_lat FLOAT",
             "ALTER TABLE workers ADD COLUMN IF NOT EXISTS last_known_lng FLOAT",
@@ -29,13 +31,40 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE disruption_events ADD COLUMN IF NOT EXISTS lng FLOAT",
             "ALTER TABLE disruption_events ADD COLUMN IF NOT EXISTS radius_km FLOAT DEFAULT 5.0",
             "ALTER TABLE workers ADD COLUMN IF NOT EXISTS fcm_token VARCHAR(200)",
+            "ALTER TABLE workers ADD COLUMN IF NOT EXISTS device_fingerprint VARCHAR(200)",
+            "ALTER TABLE workers ADD COLUMN IF NOT EXISTS sim_hash VARCHAR(64)",
+            "ALTER TABLE workers ADD COLUMN IF NOT EXISTS sim_changed_at TIMESTAMPTZ",
+            "ALTER TABLE workers ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE NOT NULL",
+            "ALTER TABLE workers ADD COLUMN IF NOT EXISTS deletion_requested_at TIMESTAMPTZ",
             "CREATE TABLE IF NOT EXISTS worker_notifications (id VARCHAR PRIMARY KEY, worker_id VARCHAR REFERENCES workers(id), title VARCHAR(120) NOT NULL, body TEXT NOT NULL, notif_type VARCHAR(40) NOT NULL, ref_id VARCHAR(100), is_read BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT NOW())",
+            "CREATE TABLE IF NOT EXISTS worker_delivery_grids (id VARCHAR PRIMARY KEY, worker_id VARCHAR REFERENCES workers(id) UNIQUE, bbox_lat_min FLOAT, bbox_lat_max FLOAT, bbox_lng_min FLOAT, bbox_lng_max FLOAT, center_lat FLOAT, center_lng FLOAT, radius_km FLOAT, p90_radius_km FLOAT, ping_count INTEGER DEFAULT 0, active_days INTEGER DEFAULT 0, dominant_pincode VARCHAR(10), dominant_city VARCHAR(100), first_ping_at TIMESTAMPTZ, last_ping_at TIMESTAMPTZ, updated_at TIMESTAMPTZ DEFAULT NOW())",
         ]
         for sql in new_columns:
             try:
                 await conn.execute(text(sql))
             except Exception:
                 pass
+                
+    # Seed Admin User
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy import select
+    from app.models.models import Admin
+    from app.services.auth_service import pwd_context
+    from app.database import AsyncSessionLocal
+    
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Admin).where(Admin.email == "codethetrend@gmail.com"))
+        admin = result.scalar_one_or_none()
+        if not admin:
+            new_admin = Admin(
+                email="codethetrend@gmail.com",
+                hashed_password=pwd_context.hash("admin"),
+                name="System Admin"
+            )
+            session.add(new_admin)
+            await session.commit()
+            print("[SEED] Admin user created: codethetrend@gmail.com")
+
     yield
     await engine.dispose()
 

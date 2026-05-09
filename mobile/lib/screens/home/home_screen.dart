@@ -124,9 +124,13 @@ class HomeScreen extends ConsumerWidget {
           final totalProtected =
               (data['total_earned_protection'] as num?)?.toDouble() ?? 0.0;
 
+          final workerName = (worker['name'] as String?)?.split(' ').first ?? 'Rider';
+          final workerCity = worker['city'] as String? ?? '';
+          final workerPlatform = (worker['platform'] as String?)?.toUpperCase() ?? '';
+
           return CustomScrollView(
             slivers: [
-              _buildAppBar(context, worker, s),
+              _buildAppBar(context, workerName, workerCity, workerPlatform, s),
               SliverPadding(
                 padding: const EdgeInsets.all(20),
                 sliver: SliverList(
@@ -207,42 +211,44 @@ class HomeScreen extends ConsumerWidget {
                       const SizedBox(height: 20),
                     ],
 
-                    // Quick actions
-                    Text(s.quickActions,
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                            child: _QuickAction(
-                          icon: Icons.add_circle_rounded,
-                          label: policy == null ? s.buyPolicy : s.buyPolicy,
-                          color: AppTheme.primary,
-                          onTap: () => context.go('/policy/buy'),
-                        )),
-                        if (ref.watch(devModeProvider)) ...[
-                          const SizedBox(width: 12),
-                          Expanded(
-                              child: _QuickAction(
-                            icon: Icons.cloud_rounded,
-                            label: s.simulateEvent,
-                            color: AppTheme.warning,
-                            onTap: () => _simulate(
-                              context,
-                              ref,
-                              s,
-                              (worker['city'] as String?)?.isNotEmpty == true
-                                  ? worker['city'] as String
-                                  : 'Bangalore',
-                              (worker['pincode'] as String?)?.isNotEmpty == true
-                                  ? worker['pincode'] as String
-                                  : '560001',
-                            ),
-                          )),
-                        ],
-                      ],
-                    ),
+                    // Simulate button — dev mode only
+                    if (ref.watch(devModeProvider)) ...[
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.cloud_rounded,
+                              color: AppTheme.warning, size: 18),
+                          label: Text(
+                            s.simulateEvent,
+                            style: const TextStyle(
+                                color: AppTheme.warning,
+                                fontWeight: FontWeight.w600),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(
+                                color: AppTheme.warning.withOpacity(0.5)),
+                            backgroundColor:
+                                AppTheme.warning.withOpacity(0.06),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14)),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          onPressed: () => _simulate(
+                            context,
+                            ref,
+                            s,
+                            (worker['city'] as String?)?.isNotEmpty == true
+                                ? worker['city'] as String
+                                : 'Bangalore',
+                            (worker['pincode'] as String?)?.isNotEmpty == true
+                                ? worker['pincode'] as String
+                                : '560001',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                    ],
 
                     // Recent claims
                     if (claims.isNotEmpty) ...[
@@ -343,25 +349,23 @@ class HomeScreen extends ConsumerWidget {
 
   String _friendlyClaimError(Object error, String noActivePolicyText) {
     final text = error.toString();
-    final known = <String>[
-      'No active policy found',
-      'Policy has expired',
-      'Already claimed this disruption event',
-      'Weekly payout cap reached for this policy',
-      'Disruption event is not in your city',
-      'not covered',
-      'Simulation is available only in dev mode',
-    ];
-    for (final item in known) {
-      if (text.contains(item)) {
-        return item == 'No active policy found' ? noActivePolicyText : item;
-      }
+    if (text.contains('No active policy found')) return noActivePolicyText;
+    if (text.contains('Policy has expired')) return 'Your policy has expired. Please renew.';
+    if (text.contains('Already claimed')) return 'You already claimed this disruption event.';
+    if (text.contains('Weekly payout cap')) return 'Weekly payout cap reached for this policy.';
+    if (text.contains('Disruption event is not in your city')) return 'This disruption is not in your city.';
+    if (text.contains('not covered')) return 'This disruption type is not covered in your city pool.';
+    if (text.contains('Simulation is available only in dev mode')) return 'Simulation is only available in dev mode.';
+    if (text.contains('persist for at least')) {
+      final match = RegExp(r'at least (\d+) min').firstMatch(text);
+      final mins = match?.group(1) ?? '30';
+      return 'Disruption must last at least $mins min before claiming.';
     }
     return 'Claim could not be triggered. Please refresh and try again.';
   }
 
-  SliverAppBar _buildAppBar(
-      BuildContext context, Map<String, dynamic> worker, dynamic s) {
+  SliverAppBar _buildAppBar(BuildContext context, String workerName,
+      String workerCity, String workerPlatform, dynamic s) {
     return SliverAppBar(
       expandedHeight: 120,
       floating: true,
@@ -377,12 +381,12 @@ class HomeScreen extends ConsumerWidget {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   Text(
-                    '${s.hello}, ${(worker['name'] as String?)?.split(' ').first ?? 'Rider'}',
+                    '${s.hello}, $workerName',
                     style: const TextStyle(
                         fontSize: 22, fontWeight: FontWeight.w800),
                   ),
                   Text(
-                    '${worker['city'] ?? ''} • ${(worker['platform'] as String?)?.toUpperCase() ?? ''}',
+                    '$workerCity • $workerPlatform',
                     style: const TextStyle(
                         color: AppTheme.textSecondary, fontSize: 14),
                   ),
@@ -475,10 +479,16 @@ class _ShieldCardState extends State<_ShieldCard>
     final tierLabel = AppConstants.tierLabels[tier] ?? s.noPolicyActive;
     final premium =
         (widget.policy?['weekly_premium'] as num?)?.toStringAsFixed(0) ?? '0';
-    final endDate = widget.policy?['end_date'] != null
-        ? DateFormat('dd MMM')
-            .format(DateTime.parse(widget.policy!['end_date']))
-        : null;
+    
+    String? endDate;
+    try {
+      final ed = widget.policy?['end_date'];
+      if (ed != null) {
+        endDate = DateFormat('dd MMM').format(DateTime.parse(ed.toString()));
+      }
+    } catch (_) {
+      endDate = null;
+    }
 
     return AnimatedBuilder(
       animation: _pulse,
